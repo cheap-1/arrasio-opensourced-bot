@@ -547,7 +547,7 @@ class socketManager {
             case "B": {
                 const action = m[0];
                 const body = player.body;
-                if (!["spawn", "clear"].includes(action) || (action === "spawn" ? m.length < 2 || m.length > 3 : m.length !== 1)) {
+                if (!["spawn", "clear"].includes(action) || (action === "spawn" ? m.length < 2 || m.length > 4 : m.length !== 1)) {
                     socket.kick("Malformed feed-bot request.");
                     return 1;
                 }
@@ -569,6 +569,7 @@ class socketManager {
                     return;
                 }
                 const profile = m[2] ?? "random-damage";
+                const tankChoice = m[3] ?? "random";
                 const upgradeBuilds = {
                     "random-damage": ["dam", "pen", "rld", "atk", "spd"],
                     damage: ["dam", "dam", "dam", "pen", "pen", "rld", "atk", "spd"],
@@ -577,6 +578,11 @@ class socketManager {
                 };
                 if (!Object.hasOwn(upgradeBuilds, profile)) {
                     socket.talk("m", Config.popup_message_duration, "Choose a valid stat upgrade build.");
+                    return;
+                }
+                const damageTanks = ["destroyer", "annihilator", "hybrid", "sprayer", "streamliner", "triplet", "fighter", "ranger", "gunner"];
+                if (tankChoice !== "random" && !damageTanks.includes(tankChoice)) {
+                    socket.talk("m", Config.popup_message_duration, "Choose a valid damage tank.");
                     return;
                 }
                 const globalCap = 1000;
@@ -589,11 +595,11 @@ class socketManager {
                     const angle = Math.random() * Math.PI * 2;
                     const distance = 30 + Math.random() * 90;
                     const bot = new Entity({ x: body.x + Math.cos(angle) * distance, y: body.y + Math.sin(angle) * distance }, body);
-                    const damageTanks = ["destroyer", "annihilator", "hybrid", "sprayer", "streamliner", "triplet", "fighter", "ranger", "gunner"];
-                    bot.define(damageTanks[Math.floor(Math.random() * damageTanks.length)]);
+                    bot.define(tankChoice === "random" ? damageTanks[Math.floor(Math.random() * damageTanks.length)] : tankChoice);
                     bot.type = "minion";
                     bot.controllers = [];
-                    bot.define({ CONTROLLERS: ["nearestDifferentMaster", "mapAltToFire", "minion", "canRepel", "hangOutNearMaster"] }, false, false, false);
+                    bot.define({ CONTROLLERS: ["mapAltToFire", "minion"] }, false, false, false);
+                    bot.source = body;
                     bot.isBot = true;
                     bot.isFeedBot = true;
                     bot.name = `${body.name}'s Feed Bot`;
@@ -617,7 +623,8 @@ class socketManager {
                         handler.feedBots = handler.feedBots.filter(entry => entry !== bot);
                     });
                 }
-                socket.talk("m", Config.popup_message_duration, `${ownedBots.length + count} level-42 damage tanks ready with the ${profile} upgrade build. Use aim and fire to direct them; hold alt-fire to send them toward your aim and attack.`);
+                const tankLabel = tankChoice === "random" ? "random damage tanks" : `${tankChoice} tanks`;
+                socket.talk("m", Config.popup_message_duration, `${ownedBots.length + count} level-42 ${tankLabel} ready with the ${profile} upgrade build. Aim and fire to direct them.`);
             } break;
             case "1": {
                 //suicide squad

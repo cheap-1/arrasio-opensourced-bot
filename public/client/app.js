@@ -13,10 +13,11 @@ import * as socketStuff from "./socketinit.js";
     document.getElementById("feedBotPanel").addEventListener("touchstart", event => event.stopPropagation(), { passive: true });
     const feedCount = document.getElementById("feedBotCount");
     const feedBotUpgradeProfile = document.getElementById("feedBotUpgradeProfile");
+    const feedBotTank = document.getElementById("feedBotTank");
     document.getElementById("feedBotSpawn").addEventListener("click", () => {
         const count = Number(feedCount.value);
         if (Number.isInteger(count) && count >= 1 && count <= 100 && global.socket) {
-            global.socket.talk("B", "spawn", count, feedBotUpgradeProfile.value);
+            global.socket.talk("B", "spawn", count, feedBotUpgradeProfile.value, feedBotTank.value);
         }
     });
     document.getElementById("feedBotClear").addEventListener("click", () => {
