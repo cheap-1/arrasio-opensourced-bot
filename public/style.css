@@ -276,10 +276,12 @@ input.error {
 .feedBotRow { display: flex; gap: 6px; }
 .feedBotRow input { width: 76px; min-width: 0; padding: 9px 6px; font-size: 16px; }
 .feedBotRow button { flex: 1; min-height: 42px; touch-action: manipulation; font-size: 15px; }
-#feedBotUpgradeProfile, #feedBotTank { width: 100%; min-height: 40px; margin: 4px 0; padding: 7px; font-size: 15px; }
+#feedBotUpgradeProfile, #feedBotTank, #feedBotTeam, #feedBotMovement { width: 100%; min-height: 40px; margin: 4px 0; padding: 7px; font-size: 15px; }
+#feedBotPanel .feedBotCheckbox { display: flex; align-items: center; gap: 7px; min-height: 34px; }
+#feedBotRespawn { width: 18px; height: 18px; }
 #feedBotPanel small { margin-top: 7px; line-height: 1.25; }
 @media (max-width: 600px) {
-	#feedBotPanel { top: 8px; left: 8px; width: min(285px, calc(100vw - 16px)); padding: 9px; }
+	#feedBotPanel { top: 8px; left: 8px; width: min(285px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain; padding: 9px; }
 	.feedBotRow button { min-height: 46px; }
 }
 

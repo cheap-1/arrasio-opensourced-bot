@@ -14,10 +14,13 @@ import * as socketStuff from "./socketinit.js";
     const feedCount = document.getElementById("feedBotCount");
     const feedBotUpgradeProfile = document.getElementById("feedBotUpgradeProfile");
     const feedBotTank = document.getElementById("feedBotTank");
+    const feedBotTeam = document.getElementById("feedBotTeam");
+    const feedBotMovement = document.getElementById("feedBotMovement");
+    const feedBotRespawn = document.getElementById("feedBotRespawn");
     document.getElementById("feedBotSpawn").addEventListener("click", () => {
         const count = Number(feedCount.value);
         if (Number.isInteger(count) && count >= 1 && count <= 100 && global.socket) {
-            global.socket.talk("B", "spawn", count, feedBotUpgradeProfile.value, feedBotTank.value);
+            global.socket.talk("B", "spawn", count, feedBotUpgradeProfile.value, feedBotTank.value, feedBotTeam.value, feedBotMovement.value, feedBotRespawn.checked);
         }
     });
     document.getElementById("feedBotClear").addEventListener("click", () => {

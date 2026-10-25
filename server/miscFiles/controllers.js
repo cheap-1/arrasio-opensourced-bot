@@ -219,6 +219,34 @@ class io_mapTargetToGoal extends IO {
         super(b)
     }
     think(input) {
+        const movement = this.body.feedBotMovement ?? "follow";
+        if (movement === "still") return;
+        if (movement === "tap") {
+            const source = this.body.source;
+            const sourceGoal = source?.control?.goal;
+            const dx = (sourceGoal?.x ?? source?.x ?? 0) - (source?.x ?? 0);
+            const dy = (sourceGoal?.y ?? source?.y ?? 0) - (source?.y ?? 0);
+            const distance = Math.hypot(dx, dy);
+            const pressed = distance > 0.25;
+            if (pressed && !this.body.feedBotMovementKeyDown) {
+                this.body.feedBotMovementKeyDown = true;
+                this.body.feedBotMovementUntil = Date.now() + 180;
+                this.body.feedBotMovementDirection = { x: dx / distance, y: dy / distance };
+            } else if (!pressed) {
+                this.body.feedBotMovementKeyDown = false;
+            }
+            if (Date.now() >= (this.body.feedBotMovementUntil ?? 0)) return;
+            const step = 90;
+            const formationOffset = this.body.feedBotFormationOffset;
+            const direction = this.body.feedBotMovementDirection ?? { x: 0, y: 0 };
+            return {
+                goal: {
+                    x: this.body.x + direction.x * step + (formationOffset?.x ?? 0),
+                    y: this.body.y + direction.y * step + (formationOffset?.y ?? 0)
+                },
+                power: 0.35
+            };
+        }
         if (input.main || input.alt) {
             const formationOffset = this.body.feedBotFormationOffset;
             return {

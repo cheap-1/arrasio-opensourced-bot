@@ -547,7 +547,7 @@ class socketManager {
             case "B": {
                 const action = m[0];
                 const body = player.body;
-                if (!["spawn", "clear"].includes(action) || (action === "spawn" ? m.length < 2 || m.length > 4 : m.length !== 1)) {
+                if (!["spawn", "clear"].includes(action) || (action === "spawn" ? m.length < 2 || m.length > 7 : m.length !== 1)) {
                     socket.kick("Malformed feed-bot request.");
                     return 1;
                 }
@@ -555,7 +555,9 @@ class socketManager {
                 const handler = global.gameManager.gameHandler;
                 const ownedBots = handler.feedBots.filter(bot => bot.master.id === body.id && !bot.isDead());
                 if (action === "clear") {
+                    player.feedBotRespawnGeneration = (player.feedBotRespawnGeneration ?? 0) + 1;
                     for (const bot of ownedBots) {
+                        if (bot.feedBotOptions) bot.feedBotOptions.respawn = false;
                         bot.kill();
                         bot.destroy();
                     }
@@ -570,7 +572,11 @@ class socketManager {
                 }
                 const profile = m[2] ?? "random-damage";
                 const tankChoice = m[3] ?? "random";
+                const teamChoice = m[4] ?? "same";
+                const movement = m[5] ?? "follow";
+                const respawn = m[6] ?? false;
                 const upgradeBuilds = {
+                    none: [],
                     "random-damage": ["dam", "pen", "rld", "atk", "spd"],
                     damage: ["dam", "dam", "dam", "pen", "pen", "rld", "atk", "spd"],
                     "rapid-fire": ["rld", "rld", "rld", "atk", "atk", "dam", "pen", "spd"],
@@ -585,18 +591,31 @@ class socketManager {
                     socket.talk("m", Config.popup_message_duration, "Choose a valid damage tank.");
                     return;
                 }
+                const teamNumber = Number(teamChoice);
+                if (teamChoice !== "same" && (!Number.isInteger(teamNumber) || teamNumber < 1 || teamNumber > 8 || teamNumber > (Config.teams ?? 4))) {
+                    socket.talk("m", Config.popup_message_duration, `Choose a team from 1 to ${Config.teams ?? 4}, or use My team.`);
+                    return;
+                }
+                if (!["follow", "still", "tap"].includes(movement) || typeof respawn !== "boolean") {
+                    socket.talk("m", Config.popup_message_duration, "Choose a valid movement and respawn option.");
+                    return;
+                }
                 const globalCap = 1000;
                 const playerCap = 1000;
                 if (ownedBots.length + count > playerCap || handler.feedBots.filter(bot => !bot.isDead()).length + count > globalCap) {
                     socket.talk("m", Config.popup_message_duration, "Feed bot limit reached (1,000 per player and 1,000 total).");
                     return;
                 }
-                for (let i = 0; i < count; i++) {
+                const options = { profile, tankChoice, teamChoice, movement, respawn };
+                const spawnFeedBot = ownerBody => {
+                    if (!ownerBody || ownerBody.isDead()) return null;
+                    const currentOwnedBots = handler.feedBots.filter(bot => bot.master.id === ownerBody.id && !bot.isDead());
+                    if (currentOwnedBots.length >= playerCap || handler.feedBots.filter(bot => !bot.isDead()).length >= globalCap) return null;
                     const angle = Math.random() * Math.PI * 2;
                     const distance = 30 + Math.random() * 90;
-                    const bot = new Entity({ x: body.x + Math.cos(angle) * distance, y: body.y + Math.sin(angle) * distance }, body);
-                    bot.define(tankChoice === "random" ? damageTanks[Math.floor(Math.random() * damageTanks.length)] : tankChoice);
-                    const formationIndex = ownedBots.length + i;
+                    const bot = new Entity({ x: ownerBody.x + Math.cos(angle) * distance, y: ownerBody.y + Math.sin(angle) * distance }, ownerBody);
+                    bot.define(options.tankChoice === "random" ? damageTanks[Math.floor(Math.random() * damageTanks.length)] : options.tankChoice);
+                    const formationIndex = currentOwnedBots.length;
                     const formationAngle = formationIndex * 2.399963229728653;
                     const formationRadius = 40 * Math.sqrt(formationIndex);
                     bot.feedBotFormationOffset = {
@@ -607,21 +626,23 @@ class socketManager {
                     bot.settings.hitsOwnType = "hardOnlyTanks";
                     bot.controllers = [];
                     bot.define({ CONTROLLERS: ["mapAltToFire", "mapTargetToGoal"] }, false, false, false);
-                    bot.source = body;
+                    bot.source = ownerBody;
                     bot.isBot = true;
                     bot.isFeedBot = true;
-                    bot.name = `${body.name}'s Feed Bot`;
-                    bot.team = body.team;
-                    bot.color.base = body.color.base;
-                    bot.leaderboardColor = body.color.base;
-                    bot.minimapColor = body.color.base;
+                    bot.feedBotMovement = options.movement;
+                    bot.feedBotOptions = options;
+                    bot.name = `${ownerBody.name}'s Feed Bot`;
+                    bot.team = options.teamChoice === "same" ? ownerBody.team : -Number(options.teamChoice);
+                    bot.color.base = global.getTeamColor(bot.team);
+                    bot.leaderboardColor = bot.color.base;
+                    bot.minimapColor = bot.color.base;
                     bot.skill.reset();
                     while (bot.skill.level < 42) {
                         bot.skill.score += bot.skill.levelScore;
                         bot.skill.maintain();
                     }
                     while (bot.skill.points) {
-                        const availableStats = upgradeBuilds[profile].filter(stat => bot.skill.amount(stat) < bot.skill.cap(stat));
+                        const availableStats = upgradeBuilds[options.profile].filter(stat => bot.skill.amount(stat) < bot.skill.cap(stat));
                         if (!availableStats.length) break;
                         bot.skillUp(availableStats[Math.floor(Math.random() * availableStats.length)]);
                     }
@@ -629,10 +650,23 @@ class socketManager {
                     handler.feedBots.push(bot);
                     bot.on("dead", () => {
                         handler.feedBots = handler.feedBots.filter(entry => entry !== bot);
+                        if (!options.respawn) return;
+                        const generation = player.feedBotRespawnGeneration ?? 0;
+                        setTimeout(() => {
+                            if (generation !== (player.feedBotRespawnGeneration ?? 0)) return;
+                            const respawnOwner = player.body;
+                            if (!respawnOwner || respawnOwner.isDead()) return;
+                            spawnFeedBot(respawnOwner);
+                        }, 1000);
                     });
-                }
+                    return bot;
+                };
+                for (let i = 0; i < count; i++) spawnFeedBot(body);
                 const tankLabel = tankChoice === "random" ? "random damage tanks" : `${tankChoice} tanks`;
-                socket.talk("m", Config.popup_message_duration, `${ownedBots.length + count} level-42 ${tankLabel} ready with the ${profile} upgrade build. Aim and fire to direct them.`);
+                const teamLabel = teamChoice === "same" ? "your team" : `Team ${teamNumber}`;
+                const buildLabel = profile === "none" ? "no stat build" : `${profile} build`;
+                const movementLabel = movement === "still" ? "stationary" : movement === "tap" ? "short step movement" : "following your aim";
+                socket.talk("m", Config.popup_message_duration, `${count} level-42 ${tankLabel} on ${teamLabel} with ${buildLabel}, ${movementLabel}${respawn ? ", respawning when killed" : ""}.`);
             } break;
             case "1": {
                 //suicide squad

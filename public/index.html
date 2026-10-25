@@ -48,6 +48,7 @@
             </div>
             <label for="feedBotUpgradeProfile">Stat upgrade build</label>
             <select id="feedBotUpgradeProfile">
+                <option value="none">No build</option>
                 <option value="random-damage">Random damage</option>
                 <option value="damage">More damage</option>
                 <option value="rapid-fire">Rapid fire</option>
@@ -66,7 +67,26 @@
                 <option value="ranger">Ranger</option>
                 <option value="gunner">Gunner</option>
             </select>
-            <small>Bots use your aim and fire controls to move and attack. They do not pick their own targets.</small>
+            <label for="feedBotTeam">Join team</label>
+            <select id="feedBotTeam">
+                <option value="same">My team</option>
+                <option value="1">Team 1 · Blue</option>
+                <option value="2">Team 2 · Green</option>
+                <option value="3">Team 3 · Red</option>
+                <option value="4">Team 4 · Purple</option>
+                <option value="5">Team 5 · Yellow</option>
+                <option value="6">Team 6 · Orange</option>
+                <option value="7">Team 7 · Brown</option>
+                <option value="8">Team 8 · Cyan</option>
+            </select>
+            <label for="feedBotMovement">Movement</label>
+            <select id="feedBotMovement">
+                <option value="follow">Follow aim</option>
+                <option value="still">No movement</option>
+                <option value="tap">Short step per movement key press</option>
+            </select>
+            <label class="feedBotCheckbox"><input id="feedBotRespawn" type="checkbox" /> Respawn bots when killed</label>
+            <small>Choose a team, stat build, and movement style. Bots use your aim and fire controls; they do not choose targets.</small>
         </section>
     </div>
     <div class="mainWrapper">
