@@ -85,12 +85,13 @@
             <label for="feedBotMovement">Movement</label>
             <select id="feedBotMovement">
                 <option value="follow">Follow aim</option>
+                <option value="ram">Ram into me</option>
                 <option value="still">No movement</option>
                 <option value="tap">Short step per movement key press</option>
             </select>
             <label class="feedBotCheckbox"><input id="feedBotRespawn" type="checkbox" /> Respawn bots when killed</label>
             <label class="feedBotCheckbox"><input id="feedBotNoFire" type="checkbox" /> Move only (don’t fire)</label>
-            <small>Choose a team, stat build, and movement style. Bots use your aim and fire controls; they do not choose targets.</small>
+            <small>Bots spawn at their team's base. Ram mode needs an opposing team to damage you. Bots do not choose targets.</small>
         </section>
         <button id="feedBotOpen" type="button" aria-label="Open feed bot spawner" aria-controls="feedBotPanel" aria-expanded="false" hidden>Bots</button>
     </div>

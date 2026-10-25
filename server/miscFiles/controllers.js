@@ -221,6 +221,14 @@ class io_mapTargetToGoal extends IO {
     think(input) {
         const movement = this.body.feedBotMovement ?? "follow";
         if (movement === "still") return;
+        if (movement === "ram") {
+            const target = this.body.source;
+            if (!target || target.isDead()) return;
+            return {
+                goal: { x: target.x, y: target.y },
+                power: 1
+            };
+        }
         if (movement === "tap") {
             const source = this.body.source;
             const sourceGoal = source?.control?.goal;

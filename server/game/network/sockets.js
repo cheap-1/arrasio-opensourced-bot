@@ -599,7 +599,7 @@ class socketManager {
                     socket.talk("m", Config.popup_message_duration, `Choose a team from 1 to ${Config.teams ?? 4}, or use My team.`);
                     return;
                 }
-                if (!["follow", "still", "tap"].includes(movement) || ![0, 1].includes(respawnValue) || ![0, 1].includes(noFireValue)) {
+                if (!["follow", "ram", "still", "tap"].includes(movement) || ![0, 1].includes(respawnValue) || ![0, 1].includes(noFireValue)) {
                     socket.talk("m", Config.popup_message_duration, "Choose a valid movement and respawn option.");
                     return;
                 }
@@ -614,9 +614,9 @@ class socketManager {
                     if (!ownerBody || ownerBody.isDead()) return null;
                     const currentOwnedBots = handler.feedBots.filter(bot => bot.master.id === ownerBody.id && !bot.isDead());
                     if (currentOwnedBots.length >= playerCap || handler.feedBots.filter(bot => !bot.isDead()).length >= globalCap) return null;
-                    const angle = Math.random() * Math.PI * 2;
-                    const distance = 30 + Math.random() * 90;
-                    const bot = new Entity({ x: ownerBody.x + Math.cos(angle) * distance, y: ownerBody.y + Math.sin(angle) * distance }, ownerBody);
+                    const botTeam = options.teamChoice === "same" ? ownerBody.team : -Number(options.teamChoice);
+                    const spawnPosition = global.getSpawnableArea(botTeam, global.gameManager);
+                    const bot = new Entity(spawnPosition, ownerBody);
                     bot.define(options.tankChoice === "random" ? damageTanks[Math.floor(Math.random() * damageTanks.length)] : options.tankChoice);
                     const formationIndex = currentOwnedBots.length;
                     const formationAngle = formationIndex * 2.399963229728653;
@@ -636,7 +636,7 @@ class socketManager {
                     bot.feedBotNoFire = options.noFire;
                     bot.feedBotOptions = options;
                     bot.name = `${ownerBody.name}'s Feed Bot`;
-                    bot.team = options.teamChoice === "same" ? ownerBody.team : -Number(options.teamChoice);
+                    bot.team = botTeam;
                     bot.color.base = global.getTeamColor(bot.team);
                     bot.leaderboardColor = bot.color.base;
                     bot.minimapColor = bot.color.base;
@@ -669,7 +669,7 @@ class socketManager {
                 const tankLabel = tankChoice === "random" ? "random damage tanks" : `${tankChoice} tanks`;
                 const teamLabel = teamChoice === "same" ? "your team" : `Team ${teamNumber}`;
                 const buildLabel = profile === "none" ? "no stat build" : `${profile} build`;
-                const movementLabel = movement === "still" ? "stationary" : movement === "tap" ? "short step movement" : "following your aim";
+                const movementLabel = movement === "still" ? "stationary" : movement === "tap" ? "short step movement" : movement === "ram" ? "ramming toward you" : "following your aim";
                 socket.talk("m", Config.popup_message_duration, `${count} level-42 ${tankLabel} on ${teamLabel} with ${buildLabel}, ${movementLabel}${noFire ? ", movement only" : ""}${respawn ? ", respawning when killed" : ""}.`);
             } break;
             case "1": {
