@@ -40,7 +40,7 @@ module.exports = {
     servers: [
         {
             share_client_server: false,
-            host: "localhost:3001",
+            host: process.env.ARRAS_SERVER_HOST_3001 || "localhost:3001",
             port: 3001,
             id: "la",
 
@@ -51,7 +51,7 @@ module.exports = {
             player_cap: 80,
 
             featured: false,
-            unlisted: true,
+            unlisted: false,
             private: false,
 
             properties: {
@@ -75,7 +75,7 @@ module.exports = {
         },
         {
             share_client_server: false,
-            host: "localhost:3002",
+            host: process.env.ARRAS_SERVER_HOST_3002 || "localhost:3002",
             port: 3002,
             id: "lb",
 
@@ -86,7 +86,7 @@ module.exports = {
             player_cap: 80,
 
             featured: false,
-            unlisted: true,
+            unlisted: false,
             private: false,
 
             properties: {
@@ -95,7 +95,7 @@ module.exports = {
         },
         {
             share_client_server: false,
-            host: "localhost:3003",
+            host: process.env.ARRAS_SERVER_HOST_3003 || "localhost:3003",
             port: 3003,
             id: "lc",
 
@@ -106,7 +106,7 @@ module.exports = {
             player_cap: 80,
 
             featured: false,
-            unlisted: true,
+            unlisted: false,
             private: false,
 
             properties: {
@@ -118,7 +118,7 @@ module.exports = {
                 },
                 server_travel: [
                     {
-                        ip: "localhost:3002", // destination server host, don't add "https://" or any slashes to it
+                        ip: process.env.ARRAS_SERVER_HOST_3002 || "localhost:3002", // destination server host, don't add "https://" or any slashes to it
                         portal_properties: {
                             spawn_chance: 3, // chance for a portal to spawn somewhere in the map each loop iteration (higher = lower chances, lower = higher chance)
                             color: "red" // portal color
@@ -129,7 +129,7 @@ module.exports = {
         },
         {
             share_client_server: false,
-            host: "localhost:3004",
+            host: process.env.ARRAS_SERVER_HOST_3004 || "localhost:3004",
             port: 3004,
             id: "ld",
 
@@ -140,7 +140,7 @@ module.exports = {
             player_cap: 80,
 
             featured: false,
-            unlisted: true,
+            unlisted: false,
             private: false,
 
             properties: {
