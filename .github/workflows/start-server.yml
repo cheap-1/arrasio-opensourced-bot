@@ -5,7 +5,6 @@ on:
 
 permissions:
   contents: read
-
 jobs:
   server:
     runs-on: ubuntu-latest
@@ -34,35 +33,58 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cloudflared
 
-      - name: Start Cloudflare Tunnel, then Arras
+      - name: Start Cloudflare tunnels, then Arras
         run: |
           set -euo pipefail
-          tunnel_log="$RUNNER_TEMP/cloudflared.log"
-          cloudflared tunnel --no-autoupdate --url http://127.0.0.1:3000 >"$tunnel_log" 2>&1 &
-          tunnel_pid=$!
+          tunnel_pids=()
           cleanup() {
-            kill "$tunnel_pid" 2>/dev/null || true
-            wait "$tunnel_pid" 2>/dev/null || true
+            for tunnel_pid in "${tunnel_pids[@]}"; do
+              kill "$tunnel_pid" 2>/dev/null || true
+            done
+            for tunnel_pid in "${tunnel_pids[@]}"; do
+              wait "$tunnel_pid" 2>/dev/null || true
+            done
           }
           trap cleanup EXIT INT TERM
 
-          public_url=""
-          for attempt in $(seq 1 60); do
-            public_url="$(grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' "$tunnel_log" | head -n 1 || true)"
-            if [ -n "$public_url" ]; then break; fi
-            if ! kill -0 "$tunnel_pid" 2>/dev/null; then
+          for port in 3000 3001 3002 3003 3004 3005; do
+            tunnel_log="$RUNNER_TEMP/cloudflared-$port.log"
+            cloudflared tunnel --no-autoupdate --url "http://127.0.0.1:$port" >"$tunnel_log" 2>&1 &
+            tunnel_pids+=("$!")
+          done
+
+          for port in 3000 3001 3002 3003 3004 3005; do
+            tunnel_log="$RUNNER_TEMP/cloudflared-$port.log"
+            tunnel_url=""
+            for attempt in $(seq 1 60); do
+              tunnel_url="$(grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' "$tunnel_log" | head -n 1 || true)"
+              if [ -n "$tunnel_url" ]; then break; fi
+              if ! kill -0 "${tunnel_pids[$((port - 3000))]}" 2>/dev/null; then
+                cat "$tunnel_log"
+                exit 1
+              fi
+              sleep 1
+            done
+            if [ -z "$tunnel_url" ]; then
               cat "$tunnel_log"
+              echo "Cloudflare Quick Tunnel for port $port did not provide a public URL in time." >&2
               exit 1
             fi
-            sleep 1
+            if [ "$port" = "3000" ]; then
+              public_url="$tunnel_url"
+            else
+              printf -v "server_host_$port" '%s' "${tunnel_url#https://}"
+            fi
           done
-          if [ -z "$public_url" ]; then
-            cat "$tunnel_log"
-            echo "Cloudflare Quick Tunnel did not provide a public URL in time." >&2
-            exit 1
-          fi
 
           public_host="${public_url#https://}"
           echo "Arras Sandbox: ${public_url}/index.html#lz" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "FFA: #la · Maze: #lb · TDM: #lc · Mothership: #ld · Growth 4TDM: #le (select in the game list)" | tee -a "$GITHUB_STEP_SUMMARY"
           echo "The game server will run until this Actions job stops (maximum 6 hours)."
-          ARRAS_PUBLIC_HOST="$public_host" npm run start
+          ARRAS_PUBLIC_HOST="$public_host" \
+          ARRAS_SERVER_HOST_3001="$server_host_3001" \
+          ARRAS_SERVER_HOST_3002="$server_host_3002" \
+          ARRAS_SERVER_HOST_3003="$server_host_3003" \
+          ARRAS_SERVER_HOST_3004="$server_host_3004" \
+          ARRAS_SERVER_HOST_3005="$server_host_3005" \
+          npm run start
