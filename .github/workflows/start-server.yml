@@ -1,0 +1,65 @@
+name: Start Arras server
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Arras dependencies
+        run: npm ci --omit=dev
+
+      - name: Install cloudflared
+        run: |
+          sudo mkdir -p --mode=0755 /usr/share/keyrings
+          curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
+          sudo apt-get update
+          sudo apt-get install -y cloudflared
+
+      - name: Start Cloudflare Tunnel, then Arras
+        run: |
+          set -euo pipefail
+          tunnel_log="$RUNNER_TEMP/cloudflared.log"
+          cloudflared tunnel --no-autoupdate --url http://127.0.0.1:3000 >"$tunnel_log" 2>&1 &
+          tunnel_pid=$!
+          cleanup() {
+            kill "$tunnel_pid" 2>/dev/null || true
+            wait "$tunnel_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT INT TERM
+
+          public_url=""
+          for attempt in $(seq 1 60); do
+            public_url="$(grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' "$tunnel_log" | head -n 1 || true)"
+            if [ -n "$public_url" ]; then break; fi
+            if ! kill -0 "$tunnel_pid" 2>/dev/null; then
+              cat "$tunnel_log"
+              exit 1
+            fi
+            sleep 1
+          done
+          if [ -z "$public_url" ]; then
+            cat "$tunnel_log"
+            echo "Cloudflare Quick Tunnel did not provide a public URL in time." >&2
+            exit 1
+          fi
+
+          public_host="${public_url#https://}"
+          echo "Arras Sandbox: ${public_url}/index.html#lz" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "The game server will run until this Actions job stops (maximum 6 hours)."
+          ARRAS_PUBLIC_HOST="$public_host" npm run start
