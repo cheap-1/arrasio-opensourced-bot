@@ -1759,6 +1759,13 @@ class socketManager {
                         camera.scoping = player.body.cameraOverrideX !== null; // For scoping.
                         // Get what we should be able to see
                         fovNow = player.body.fov;
+                        // Growth tanks become enormous, and their size-based FOV can
+                        // make each update include thousands of extra entities.
+                        // Keep the gameplay FOV calculation intact, but cap the
+                        // player camera in growth mode to bound render/network work.
+                        if (Config.growth && player.body.isPlayer) {
+                            fovNow = Math.min(fovNow, 2000);
+                        }
                         // Get our body id
                         player.viewId = player.body.id;
                     }
