@@ -15,6 +15,8 @@ class socketManager {
         this.disconnections = [];
         this.playersReceived = [];
         this.bans = [];
+        this.feedBotSpawnQueue = [];
+        this.feedBotSpawnTimer = null;
         // Import permissions
         for (let entry of require("../permissions.js")) {
             if (entry.key != null) {
@@ -43,6 +45,53 @@ class socketManager {
             );
         }
     };
+    getPlayerCount() {
+        const feedBots = global.gameManager.gameHandler?.feedBots ?? [];
+        return this.clients.length + feedBots.length;
+    }
+    reportPlayerCount() {
+        const count = this.getPlayerCount();
+        if (global.gameManager.parentPort) {
+            global.gameManager.parentPort.postMessage([true, count]);
+        } else {
+            for (const server of global.servers) {
+                if (server.gameManager === global.gameManager) server.players = count;
+            }
+        }
+    }
+    queueFeedBotSpawns(player, generation, count, spawnBot, fast = false) {
+        this.feedBotSpawnQueue.push({ player, generation, remaining: count, spawnBot, fast });
+        this.scheduleFeedBotSpawn();
+    }
+    cancelFeedBotSpawns(player) {
+        this.feedBotSpawnQueue = this.feedBotSpawnQueue.filter(task => task.player !== player);
+        if (!this.feedBotSpawnQueue.length && this.feedBotSpawnTimer) {
+            clearTimeout(this.feedBotSpawnTimer);
+            this.feedBotSpawnTimer = null;
+        }
+    }
+    scheduleFeedBotSpawn() {
+        if (this.feedBotSpawnTimer || !this.feedBotSpawnQueue.length) return;
+        const fast = this.feedBotSpawnQueue[0].fast;
+        const delay = fast ? 100 : 100 + Math.floor(Math.random() * 500);
+        this.feedBotSpawnTimer = setTimeout(() => {
+            this.feedBotSpawnTimer = null;
+            while (this.feedBotSpawnQueue.length) {
+                const task = this.feedBotSpawnQueue.shift();
+                if (task.generation !== (task.player.feedBotRespawnGeneration ?? 0)) continue;
+                const owner = task.player.body;
+                if (!owner || owner.isDead()) continue;
+                try {
+                    task.spawnBot(owner);
+                } catch (error) {
+                    console.error("Feed bot spawn failed:", error);
+                }
+                if (--task.remaining > 0) this.feedBotSpawnQueue.push(task);
+                break;
+            }
+            this.scheduleFeedBotSpawn();
+        }, delay);
+    }
     ban(socket, reason) {
         let time = Date.now();
         util.warn((reason || "No reason given.") + " Banning.");
@@ -176,14 +225,7 @@ class socketManager {
         util.remove(global.gameManager.views, global.gameManager.views.indexOf(socket.view));
         // Remove the socket
         util.remove(this.clients, this.clients.indexOf(socket));
-        if (!global.gameManager.parentPort) {
-            for (let i = 0; i < global.servers.length; i++) {
-                let server = global.servers[i];
-                if (server.gameManager) server.players--;
-            }
-        } else {
-            global.gameManager.parentPort.postMessage([true, this.clients.length]);
-        }
+        this.reportPlayerCount();
         util.log("[INFO]: The connection has closed. Views: " + global.gameManager.views.length + ". Clients: " + this.clients.length + ".");
     }
     incoming(message, socket) {
@@ -556,8 +598,7 @@ class socketManager {
                 const ownedBots = handler.feedBots.filter(bot => bot.master.id === body.id && !bot.isDead());
                 if (action === "clear") {
                     player.feedBotRespawnGeneration = (player.feedBotRespawnGeneration ?? 0) + 1;
-                    for (const queue of player.feedBotSpawnQueues ?? []) queue.cancelled = true;
-                    player.feedBotSpawnQueues?.clear();
+                    this.cancelFeedBotSpawns(player);
                     player.feedBotFormationIndex = 0;
                     for (const bot of ownedBots) {
                         if (bot.feedBotOptions) bot.feedBotOptions.respawn = false;
@@ -565,6 +606,7 @@ class socketManager {
                         bot.destroy();
                     }
                     handler.feedBots = handler.feedBots.filter(bot => bot.master.id !== body.id);
+                    this.reportPlayerCount();
                     socket.talk("m", Config.popup_message_duration, "Your feed bots are cleared.");
                     return;
                 }
@@ -652,8 +694,10 @@ class socketManager {
                     }
                     bot.refreshBodyAttributes();
                     handler.feedBots.push(bot);
+                    this.reportPlayerCount();
                     bot.on("dead", () => {
                         handler.feedBots = handler.feedBots.filter(entry => entry !== bot);
+                        this.reportPlayerCount();
                         if (!options.respawn) return;
                         const generation = player.feedBotRespawnGeneration ?? 0;
                         setTimeout(() => {
@@ -665,38 +709,13 @@ class socketManager {
                     });
                     return bot;
                 };
-                if (spawnRate === "instant") {
-                    for (let i = 0; i < count; i++) spawnFeedBot(player.body);
-                } else {
-                    const queue = { cancelled: false };
-                    const queues = player.feedBotSpawnQueues ??= new Set();
-                    queues.add(queue);
-                    const generation = player.feedBotRespawnGeneration ?? 0;
-                    let remaining = count;
-                    const spawnNext = () => {
-                        if (queue.cancelled || generation !== (player.feedBotRespawnGeneration ?? 0)) {
-                            queues.delete(queue);
-                            return;
-                        }
-                        const currentBody = player.body;
-                        if (!currentBody || currentBody.isDead()) {
-                            queues.delete(queue);
-                            return;
-                        }
-                        spawnFeedBot(currentBody);
-                        if (--remaining <= 0) {
-                            queues.delete(queue);
-                            return;
-                        }
-                        setTimeout(spawnNext, 100 + Math.floor(Math.random() * 500));
-                    };
-                    setTimeout(spawnNext, Math.floor(Math.random() * 500));
-                }
+                const generation = player.feedBotRespawnGeneration ?? 0;
+                this.queueFeedBotSpawns(player, generation, count, spawnFeedBot, spawnRate === "instant");
                 const tankLabel = tankChoice === "random" ? "random damage tanks" : `${tankChoice} tanks`;
                 const teamLabel = teamChoice === "same" ? "your team" : `Team ${teamNumber}`;
                 const buildLabel = profile === "none" ? "no stat build" : `${profile} build`;
                 const movementLabel = movement === "still" ? "stationary" : movement === "tap" ? "short step movement" : movement === "ram" ? "ramming toward you" : "following your aim";
-                const spawnRateLabel = spawnRate === "natural" ? "queued at a natural random rate" : "spawning instantly";
+                const spawnRateLabel = spawnRate === "natural" ? "queued at a natural random rate" : "queued at a fast server-paced rate";
                 socket.talk("m", Config.popup_message_duration, `${count} level-42 ${tankLabel} on ${teamLabel} with ${buildLabel}, ${movementLabel}${noFire ? ", movement only" : ""}${respawn ? ", respawning when killed" : ""}; ${spawnRateLabel}.`);
             } break;
             case "1": {
@@ -2410,14 +2429,7 @@ class socketManager {
 
         this.clients.push(socket);
 
-        if (!global.gameManager.parentPort) {
-            for (let i = 0; i < global.servers.length; i++) {
-                let server = global.servers[i];
-                if (server.gameManager) server.players++;
-            }
-        } else {
-            global.gameManager.parentPort.postMessage([true, this.clients.length]);
-        }
+        this.reportPlayerCount();
         util.log("[INFO]: Client has been welcomed!");
 
         if (Config.load_all_mockups) {

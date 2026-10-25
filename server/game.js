@@ -164,7 +164,7 @@ class gameServer {
             hidden: this.serverProperties.hidden ?? false,
             ip: this.host === "localhost" ? `${this.host}:${this.port}` : this.host,
             port: this.port,
-            players: this.socketManager.clients.length,
+            players: this.socketManager.getPlayerCount(),
             maxPlayers: this.webProperties.maxPlayers,
             id: this.webProperties.id,
             featured: this.featured,
@@ -218,7 +218,7 @@ class gameServer {
                         res.writeHead(200);
                         res.end(JSON.stringify([{
                             ip: this.host,
-                            players: this.socketManager.clients.length,
+                            players: this.socketManager.getPlayerCount(),
                             gameMode: this.name
                         }]));
                     } else {
