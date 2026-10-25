@@ -9,8 +9,21 @@ import * as socketStuff from "./socketinit.js";
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff, keybinderHandler) {
     let { socketInit, resync, gui, leaderboard, minimap, moveCompensation, lag, getNow } = socketStuff;
-    document.getElementById("feedBotPanel").addEventListener("pointerdown", event => event.stopPropagation());
-    document.getElementById("feedBotPanel").addEventListener("touchstart", event => event.stopPropagation(), { passive: true });
+    const feedBotPanel = document.getElementById("feedBotPanel");
+    const feedBotOpen = document.getElementById("feedBotOpen");
+    const stopFeedBotUiInput = event => event.stopPropagation();
+    feedBotPanel.addEventListener("pointerdown", stopFeedBotUiInput);
+    feedBotPanel.addEventListener("touchstart", stopFeedBotUiInput, { passive: true });
+    feedBotOpen.addEventListener("pointerdown", stopFeedBotUiInput);
+    feedBotOpen.addEventListener("touchstart", stopFeedBotUiInput, { passive: true });
+    document.getElementById("feedBotClose").addEventListener("click", () => {
+        feedBotPanel.hidden = true;
+        feedBotOpen.hidden = false;
+    });
+    feedBotOpen.addEventListener("click", () => {
+        feedBotPanel.hidden = false;
+        feedBotOpen.hidden = true;
+    });
     const feedCount = document.getElementById("feedBotCount");
     const feedBotUpgradeProfile = document.getElementById("feedBotUpgradeProfile");
     const feedBotTank = document.getElementById("feedBotTank");

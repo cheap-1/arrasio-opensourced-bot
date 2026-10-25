@@ -270,8 +270,12 @@ input.error {
 	font: 14px Arial, sans-serif;
 	box-sizing: border-box;
 }
-#feedBotPanel strong, #feedBotPanel label, #feedBotPanel small { display: block; }
-#feedBotPanel strong { font-size: 17px; margin-bottom: 7px; }
+#feedBotPanel label, #feedBotPanel small { display: block; }
+.feedBotHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+.feedBotHeader strong { font-size: 17px; }
+#feedBotClose { width: 36px; height: 36px; border: 0; border-radius: 8px; background: #ddd; color: #222; font-size: 25px; line-height: 1; touch-action: manipulation; }
+#feedBotOpen { position: absolute; z-index: 10; top: 12px; left: 12px; min-width: 54px; min-height: 44px; border: 2px solid #555; border-radius: 10px; background: rgba(245, 245, 245, 0.94); color: #222; box-shadow: 0 2px 8px #0006; font: bold 14px Arial, sans-serif; touch-action: manipulation; }
+#feedBotPanel[hidden], #feedBotOpen[hidden] { display: none !important; }
 #feedBotPanel label { margin-bottom: 5px; }
 .feedBotRow { display: flex; gap: 6px; }
 .feedBotRow input { width: 76px; min-width: 0; padding: 9px 6px; font-size: 16px; }
@@ -282,6 +286,7 @@ input.error {
 #feedBotPanel small { margin-top: 7px; line-height: 1.25; }
 @media (max-width: 600px) {
 	#feedBotPanel { top: 8px; left: 8px; width: min(285px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow-y: auto; overscroll-behavior: contain; padding: 9px; }
+	#feedBotOpen { top: 8px; left: 8px; }
 	.feedBotRow button { min-height: 46px; }
 }
 
