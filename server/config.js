@@ -150,6 +150,26 @@ module.exports = {
             }
         },
         {
+            share_client_server: false,
+            host: process.env.ARRAS_SERVER_HOST_3005 || "localhost:3005",
+            port: 3005,
+            id: "le",
+
+            region: "Local",
+            serverhost: "Local",
+            location: "Localhost",
+            gamemode: ["growth", "tdm"],
+            player_cap: 80,
+
+            featured: false,
+            unlisted: false,
+            private: false,
+
+            properties: {
+                teams: 4
+            }
+        },
+        {
             share_client_server: true,
             host: "localhost:3099",
             port: 3099,
