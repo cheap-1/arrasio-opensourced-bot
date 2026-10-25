@@ -82,6 +82,11 @@
                 <option value="7">Team 7 · Brown</option>
                 <option value="8">Team 8 · Cyan</option>
             </select>
+            <label for="feedBotSpawnLocation">Spawn location</label>
+            <select id="feedBotSpawnLocation">
+                <option value="base">Team base</option>
+                <option value="player">On me</option>
+            </select>
             <label for="feedBotMovement">Movement</label>
             <select id="feedBotMovement">
                 <option value="follow">Follow aim</option>
@@ -91,7 +96,7 @@
             </select>
             <label class="feedBotCheckbox"><input id="feedBotRespawn" type="checkbox" /> Respawn bots when killed</label>
             <label class="feedBotCheckbox"><input id="feedBotNoFire" type="checkbox" /> Move only (don’t fire)</label>
-            <small>Bots spawn at their team's base. Ram mode needs an opposing team to damage you. Bots do not choose targets.</small>
+            <small>Follow aim sends every bot to the same point. Choose team base or spawn on you. Ram mode needs an opposing team to damage you.</small>
         </section>
         <button id="feedBotOpen" type="button" aria-label="Open feed bot spawner" aria-controls="feedBotPanel" aria-expanded="false" hidden>Bots</button>
     </div>

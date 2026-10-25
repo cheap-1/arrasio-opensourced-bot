@@ -280,7 +280,7 @@ input.error {
 .feedBotRow { display: flex; gap: 6px; }
 .feedBotRow input { width: 76px; min-width: 0; padding: 9px 6px; font-size: 16px; }
 .feedBotRow button { flex: 1; min-height: 42px; touch-action: manipulation; font-size: 15px; }
-#feedBotUpgradeProfile, #feedBotTank, #feedBotTeam, #feedBotMovement { width: 100%; min-height: 40px; margin: 4px 0; padding: 7px; font-size: 15px; }
+#feedBotUpgradeProfile, #feedBotTank, #feedBotTeam, #feedBotSpawnLocation, #feedBotMovement { width: 100%; min-height: 40px; margin: 4px 0; padding: 7px; font-size: 15px; }
 #feedBotPanel .feedBotCheckbox { display: flex; align-items: center; gap: 7px; min-height: 34px; }
 #feedBotRespawn, #feedBotNoFire { width: 18px; height: 18px; }
 #feedBotPanel small { margin-top: 7px; line-height: 1.25; }

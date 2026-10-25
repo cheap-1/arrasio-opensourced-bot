@@ -547,7 +547,7 @@ class socketManager {
             case "B": {
                 const action = m[0];
                 const body = player.body;
-                if (!["spawn", "clear"].includes(action) || (action === "spawn" ? m.length < 2 || m.length > 8 : m.length !== 1)) {
+                if (!["spawn", "clear"].includes(action) || (action === "spawn" ? m.length < 2 || m.length > 9 : m.length !== 1)) {
                     socket.kick("Malformed feed-bot request.");
                     return 1;
                 }
@@ -576,6 +576,7 @@ class socketManager {
                 const movement = m[5] ?? "follow";
                 const respawnValue = m[6] ?? 0;
                 const noFireValue = m[7] ?? 0;
+                const spawnLocation = m[8] ?? "base";
                 const respawn = respawnValue === 1;
                 const noFire = noFireValue === 1;
                 const upgradeBuilds = {
@@ -599,7 +600,7 @@ class socketManager {
                     socket.talk("m", Config.popup_message_duration, `Choose a team from 1 to ${Config.teams ?? 4}, or use My team.`);
                     return;
                 }
-                if (!["follow", "ram", "still", "tap"].includes(movement) || ![0, 1].includes(respawnValue) || ![0, 1].includes(noFireValue)) {
+                if (!["follow", "ram", "still", "tap"].includes(movement) || ![0, 1].includes(respawnValue) || ![0, 1].includes(noFireValue) || !["base", "player"].includes(spawnLocation)) {
                     socket.talk("m", Config.popup_message_duration, "Choose a valid movement and respawn option.");
                     return;
                 }
@@ -609,13 +610,15 @@ class socketManager {
                     socket.talk("m", Config.popup_message_duration, "Feed bot limit reached (1,000 per player and 1,000 total).");
                     return;
                 }
-                const options = { profile, tankChoice, teamChoice, movement, respawn, noFire };
+                const options = { profile, tankChoice, teamChoice, movement, respawn, noFire, spawnLocation };
                 const spawnFeedBot = ownerBody => {
                     if (!ownerBody || ownerBody.isDead()) return null;
                     const currentOwnedBots = handler.feedBots.filter(bot => bot.master.id === ownerBody.id && !bot.isDead());
                     if (currentOwnedBots.length >= playerCap || handler.feedBots.filter(bot => !bot.isDead()).length >= globalCap) return null;
                     const botTeam = options.teamChoice === "same" ? ownerBody.team : -Number(options.teamChoice);
-                    const spawnPosition = global.getSpawnableArea(botTeam, global.gameManager);
+                    const spawnPosition = options.spawnLocation === "player"
+                        ? { x: ownerBody.x, y: ownerBody.y }
+                        : global.getSpawnableArea(botTeam, global.gameManager);
                     const bot = new Entity(spawnPosition, ownerBody);
                     bot.define(options.tankChoice === "random" ? damageTanks[Math.floor(Math.random() * damageTanks.length)] : options.tankChoice);
                     const formationIndex = currentOwnedBots.length;
