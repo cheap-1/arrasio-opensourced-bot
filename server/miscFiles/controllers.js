@@ -220,10 +220,11 @@ class io_mapTargetToGoal extends IO {
     }
     think(input) {
         if (input.main || input.alt) {
+            const formationOffset = this.body.feedBotFormationOffset;
             return {
                 goal: {
-                    x: input.target.x + this.body.x,
-                    y: input.target.y + this.body.y
+                    x: input.target.x + this.body.x + (formationOffset?.x ?? 0),
+                    y: input.target.y + this.body.y + (formationOffset?.y ?? 0)
                 },
                 power: 1
             }

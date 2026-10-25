@@ -596,9 +596,17 @@ class socketManager {
                     const distance = 30 + Math.random() * 90;
                     const bot = new Entity({ x: body.x + Math.cos(angle) * distance, y: body.y + Math.sin(angle) * distance }, body);
                     bot.define(tankChoice === "random" ? damageTanks[Math.floor(Math.random() * damageTanks.length)] : tankChoice);
-                    bot.type = "minion";
+                    const formationIndex = ownedBots.length + i;
+                    const formationAngle = formationIndex * 2.399963229728653;
+                    const formationRadius = 40 * Math.sqrt(formationIndex);
+                    bot.feedBotFormationOffset = {
+                        x: Math.cos(formationAngle) * formationRadius,
+                        y: Math.sin(formationAngle) * formationRadius
+                    };
+                    bot.type = "tank";
+                    bot.settings.hitsOwnType = "hardOnlyTanks";
                     bot.controllers = [];
-                    bot.define({ CONTROLLERS: ["mapAltToFire", "minion"] }, false, false, false);
+                    bot.define({ CONTROLLERS: ["mapAltToFire", "mapTargetToGoal"] }, false, false, false);
                     bot.source = body;
                     bot.isBot = true;
                     bot.isFeedBot = true;
