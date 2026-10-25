@@ -12,9 +12,12 @@ import * as socketStuff from "./socketinit.js";
     document.getElementById("feedBotPanel").addEventListener("pointerdown", event => event.stopPropagation());
     document.getElementById("feedBotPanel").addEventListener("touchstart", event => event.stopPropagation(), { passive: true });
     const feedCount = document.getElementById("feedBotCount");
+    const feedBotUpgradeProfile = document.getElementById("feedBotUpgradeProfile");
     document.getElementById("feedBotSpawn").addEventListener("click", () => {
         const count = Number(feedCount.value);
-        if (Number.isInteger(count) && count >= 1 && count <= 100 && global.socket) global.socket.talk("B", "spawn", count);
+        if (Number.isInteger(count) && count >= 1 && count <= 100 && global.socket) {
+            global.socket.talk("B", "spawn", count, feedBotUpgradeProfile.value);
+        }
     });
     document.getElementById("feedBotClear").addEventListener("click", () => {
         if (global.socket) global.socket.talk("B", "clear");

@@ -547,7 +547,7 @@ class socketManager {
             case "B": {
                 const action = m[0];
                 const body = player.body;
-                if (m.length !== (action === "spawn" ? 2 : 1) || !["spawn", "clear"].includes(action)) {
+                if (!["spawn", "clear"].includes(action) || (action === "spawn" ? m.length < 2 || m.length > 3 : m.length !== 1)) {
                     socket.kick("Malformed feed-bot request.");
                     return 1;
                 }
@@ -566,6 +566,17 @@ class socketManager {
                 const count = m[1];
                 if (!Number.isInteger(count) || count < 1 || count > 100) {
                     socket.talk("m", Config.popup_message_duration, "Choose a spawn batch from 1 to 100.");
+                    return;
+                }
+                const profile = m[2] ?? "random-damage";
+                const upgradeBuilds = {
+                    "random-damage": ["dam", "pen", "rld", "atk", "spd"],
+                    damage: ["dam", "dam", "dam", "pen", "pen", "rld", "atk", "spd"],
+                    "rapid-fire": ["rld", "rld", "rld", "atk", "atk", "dam", "pen", "spd"],
+                    speed: ["spd", "spd", "spd", "dam", "dam", "pen", "rld", "atk"]
+                };
+                if (!Object.hasOwn(upgradeBuilds, profile)) {
+                    socket.talk("m", Config.popup_message_duration, "Choose a valid stat upgrade build.");
                     return;
                 }
                 const globalCap = 1000;
@@ -595,9 +606,8 @@ class socketManager {
                         bot.skill.score += bot.skill.levelScore;
                         bot.skill.maintain();
                     }
-                    const damageStats = ["dam", "pen", "rld", "atk", "spd"];
                     while (bot.skill.points) {
-                        const availableStats = damageStats.filter(stat => bot.skill.amount(stat) < bot.skill.cap(stat));
+                        const availableStats = upgradeBuilds[profile].filter(stat => bot.skill.amount(stat) < bot.skill.cap(stat));
                         if (!availableStats.length) break;
                         bot.skillUp(availableStats[Math.floor(Math.random() * availableStats.length)]);
                     }
@@ -607,7 +617,7 @@ class socketManager {
                         handler.feedBots = handler.feedBots.filter(entry => entry !== bot);
                     });
                 }
-                socket.talk("m", Config.popup_message_duration, `${ownedBots.length + count} random level-42 damage tanks ready. Use aim and fire to direct them; hold alt-fire to send them toward your aim and attack.`);
+                socket.talk("m", Config.popup_message_duration, `${ownedBots.length + count} level-42 damage tanks ready with the ${profile} upgrade build. Use aim and fire to direct them; hold alt-fire to send them toward your aim and attack.`);
             } break;
             case "1": {
                 //suicide squad
