@@ -574,8 +574,10 @@ class socketManager {
                 const tankChoice = m[3] ?? "random";
                 const teamChoice = m[4] ?? "same";
                 const movement = m[5] ?? "follow";
-                const respawn = m[6] ?? false;
-                const noFire = m[7] ?? false;
+                const respawnValue = m[6] ?? 0;
+                const noFireValue = m[7] ?? 0;
+                const respawn = respawnValue === 1;
+                const noFire = noFireValue === 1;
                 const upgradeBuilds = {
                     none: [],
                     "random-damage": ["dam", "pen", "rld", "atk", "spd"],
@@ -597,7 +599,7 @@ class socketManager {
                     socket.talk("m", Config.popup_message_duration, `Choose a team from 1 to ${Config.teams ?? 4}, or use My team.`);
                     return;
                 }
-                if (!["follow", "still", "tap"].includes(movement) || typeof respawn !== "boolean" || typeof noFire !== "boolean") {
+                if (!["follow", "still", "tap"].includes(movement) || ![0, 1].includes(respawnValue) || ![0, 1].includes(noFireValue)) {
                     socket.talk("m", Config.popup_message_duration, "Choose a valid movement and respawn option.");
                     return;
                 }
