@@ -85,7 +85,7 @@
             <label for="feedBotSpawnLocation">Spawn location</label>
             <select id="feedBotSpawnLocation">
                 <option value="base">Team base</option>
-                <option value="player">On me</option>
+                <option value="player">Around me (keep my hitbox clear)</option>
             </select>
             <label for="feedBotSpawnRate">Spawn timing</label>
             <select id="feedBotSpawnRate">
@@ -101,7 +101,8 @@
             </select>
             <label class="feedBotCheckbox"><input id="feedBotRespawn" type="checkbox" /> Respawn bots when killed</label>
             <label class="feedBotCheckbox"><input id="feedBotNoFire" type="checkbox" /> Move only (don’t fire)</label>
-            <small>Follow aim sends every bot to the same point. Choose team base or spawn on you. Ram mode needs an opposing team to damage you.</small>
+            <label class="feedBotCheckbox"><input id="feedBotInvincible" type="checkbox" /> Invincible (me)</label>
+            <small>Follow aim sends every bot to the same point. Bots spawn around your body to keep its hitbox clear. Invulnerability requires operator or level access.</small>
         </section>
         <button id="feedBotOpen" type="button" aria-label="Open feed bot spawner" aria-controls="feedBotPanel" aria-expanded="false" hidden>Bots</button>
     </div>

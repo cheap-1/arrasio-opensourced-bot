@@ -589,6 +589,21 @@ class socketManager {
             case "B": {
                 const action = m[0];
                 const body = player.body;
+                if (action === "godmode") {
+                    if (m.length !== 2 || ![0, 1].includes(m[1])) {
+                        socket.kick("Malformed invulnerability request.");
+                        return 1;
+                    }
+                    if (!body || body.underControl) return;
+                    const permissionLevel = socket.permissions?.level ?? 0;
+                    if (permissionLevel < 1 && !body.hasOperator) {
+                        socket.talk("m", Config.popup_message_duration, "Invulnerability requires operator or level access.");
+                        return;
+                    }
+                    body.godmode = m[1] === 1;
+                    socket.talk("m", Config.popup_message_duration, `Invulnerability ${body.godmode ? "enabled" : "disabled"}.`);
+                    return;
+                }
                 if (!["spawn", "clear"].includes(action) || (action === "spawn" ? m.length < 2 || m.length > 10 : m.length !== 1)) {
                     socket.kick("Malformed feed-bot request.");
                     return 1;
@@ -654,15 +669,20 @@ class socketManager {
                 const spawnFeedBot = ownerBody => {
                     if (!ownerBody || ownerBody.isDead()) return null;
                     const botTeam = options.teamChoice === "same" ? ownerBody.team : -Number(options.teamChoice);
-                    const spawnPosition = options.spawnLocation === "player"
-                        ? { x: ownerBody.x, y: ownerBody.y }
-                        : global.getSpawnableArea(botTeam, global.gameManager);
-                    const bot = new Entity(spawnPosition, ownerBody);
-                    bot.define(options.tankChoice === "random" ? damageTanks[Math.floor(Math.random() * damageTanks.length)] : options.tankChoice);
                     const formationIndex = player.feedBotFormationIndex ??= ownedBots.length;
                     player.feedBotFormationIndex++;
                     const formationAngle = formationIndex * 2.399963229728653;
-                    const formationRadius = 40 * Math.sqrt(formationIndex);
+                    const formationRadius = options.spawnLocation === "player"
+                        ? ownerBody.realSize + 48 + 24 * Math.sqrt(formationIndex)
+                        : 40 * Math.sqrt(formationIndex);
+                    const spawnPosition = options.spawnLocation === "player"
+                        ? {
+                            x: ownerBody.x + Math.cos(formationAngle) * formationRadius,
+                            y: ownerBody.y + Math.sin(formationAngle) * formationRadius
+                        }
+                        : global.getSpawnableArea(botTeam, global.gameManager);
+                    const bot = new Entity(spawnPosition, ownerBody);
+                    bot.define(options.tankChoice === "random" ? damageTanks[Math.floor(Math.random() * damageTanks.length)] : options.tankChoice);
                     bot.feedBotFormationOffset = {
                         x: Math.cos(formationAngle) * formationRadius,
                         y: Math.sin(formationAngle) * formationRadius
@@ -1759,13 +1779,6 @@ class socketManager {
                         camera.scoping = player.body.cameraOverrideX !== null; // For scoping.
                         // Get what we should be able to see
                         fovNow = player.body.fov;
-                        // Growth tanks become enormous, and their size-based FOV can
-                        // make each update include thousands of extra entities.
-                        // Keep the gameplay FOV calculation intact, but cap the
-                        // player camera in growth mode to bound render/network work.
-                        if (Config.growth && player.body.isPlayer) {
-                            fovNow = Math.min(fovNow, 2000);
-                        }
                         // Get our body id
                         player.viewId = player.body.id;
                     }

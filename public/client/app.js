@@ -33,6 +33,10 @@ import * as socketStuff from "./socketinit.js";
     const feedBotMovement = document.getElementById("feedBotMovement");
     const feedBotRespawn = document.getElementById("feedBotRespawn");
     const feedBotNoFire = document.getElementById("feedBotNoFire");
+    const feedBotInvincible = document.getElementById("feedBotInvincible");
+    feedBotInvincible.addEventListener("change", () => {
+        if (global.socket) global.socket.talk("B", "godmode", feedBotInvincible.checked ? 1 : 0);
+    });
     document.getElementById("feedBotSpawn").addEventListener("click", () => {
         const count = Number(feedCount.value);
         if (Number.isSafeInteger(count) && count >= 1 && global.socket) {
