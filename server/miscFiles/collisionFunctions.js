@@ -143,7 +143,9 @@ function advancedcollide(my, n, doDamage, doInelastic, nIsFirmCollide = false) {
             tock * (motion._me.y - motion._n.y)
         ),
         difference = new Vector(my.x - n.x, my.y - n.y),
-        direction = new Vector((n.x - my.x) / difference.length, (n.y - my.y) / difference.length),
+        direction = difference.length
+            ? new Vector((n.x - my.x) / difference.length, (n.y - my.y) / difference.length)
+            : new Vector(my.id < n.id ? 1 : -1, 0),
         component = Math.max(0, direction.x * delta.x + direction.y * delta.y);
 
     // radius check
@@ -199,11 +201,13 @@ function advancedcollide(my, n, doDamage, doInelastic, nIsFirmCollide = false) {
         my.stepRemaining -= t;
         n.stepRemaining -= t;
         difference = new Vector(my.x - n.x, my.y - n.y);
-        direction = new Vector((n.x - my.x) / difference.length, (n.y - my.y) / difference.length);
+        direction = difference.length
+            ? new Vector((n.x - my.x) / difference.length, (n.y - my.y) / difference.length)
+            : new Vector(my.id < n.id ? 1 : -1, 0);
         component = Math.max(0, direction.x * delta.x + direction.y * delta.y);
     }
 
-    let componentNorm = component / delta.length;
+    let componentNorm = delta.length ? component / delta.length : 0;
     let reductionFactor = 1,
         deathFactor = {
             _me: 1,
