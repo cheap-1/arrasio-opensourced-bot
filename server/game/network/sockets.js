@@ -547,7 +547,7 @@ class socketManager {
             case "B": {
                 const action = m[0];
                 const body = player.body;
-                if (!["spawn", "clear"].includes(action) || (action === "spawn" ? m.length < 2 || m.length > 7 : m.length !== 1)) {
+                if (!["spawn", "clear"].includes(action) || (action === "spawn" ? m.length < 2 || m.length > 8 : m.length !== 1)) {
                     socket.kick("Malformed feed-bot request.");
                     return 1;
                 }
@@ -575,6 +575,7 @@ class socketManager {
                 const teamChoice = m[4] ?? "same";
                 const movement = m[5] ?? "follow";
                 const respawn = m[6] ?? false;
+                const noFire = m[7] ?? false;
                 const upgradeBuilds = {
                     none: [],
                     "random-damage": ["dam", "pen", "rld", "atk", "spd"],
@@ -596,7 +597,7 @@ class socketManager {
                     socket.talk("m", Config.popup_message_duration, `Choose a team from 1 to ${Config.teams ?? 4}, or use My team.`);
                     return;
                 }
-                if (!["follow", "still", "tap"].includes(movement) || typeof respawn !== "boolean") {
+                if (!["follow", "still", "tap"].includes(movement) || typeof respawn !== "boolean" || typeof noFire !== "boolean") {
                     socket.talk("m", Config.popup_message_duration, "Choose a valid movement and respawn option.");
                     return;
                 }
@@ -606,7 +607,7 @@ class socketManager {
                     socket.talk("m", Config.popup_message_duration, "Feed bot limit reached (1,000 per player and 1,000 total).");
                     return;
                 }
-                const options = { profile, tankChoice, teamChoice, movement, respawn };
+                const options = { profile, tankChoice, teamChoice, movement, respawn, noFire };
                 const spawnFeedBot = ownerBody => {
                     if (!ownerBody || ownerBody.isDead()) return null;
                     const currentOwnedBots = handler.feedBots.filter(bot => bot.master.id === ownerBody.id && !bot.isDead());
@@ -630,6 +631,7 @@ class socketManager {
                     bot.isBot = true;
                     bot.isFeedBot = true;
                     bot.feedBotMovement = options.movement;
+                    bot.feedBotNoFire = options.noFire;
                     bot.feedBotOptions = options;
                     bot.name = `${ownerBody.name}'s Feed Bot`;
                     bot.team = options.teamChoice === "same" ? ownerBody.team : -Number(options.teamChoice);
@@ -666,7 +668,7 @@ class socketManager {
                 const teamLabel = teamChoice === "same" ? "your team" : `Team ${teamNumber}`;
                 const buildLabel = profile === "none" ? "no stat build" : `${profile} build`;
                 const movementLabel = movement === "still" ? "stationary" : movement === "tap" ? "short step movement" : "following your aim";
-                socket.talk("m", Config.popup_message_duration, `${count} level-42 ${tankLabel} on ${teamLabel} with ${buildLabel}, ${movementLabel}${respawn ? ", respawning when killed" : ""}.`);
+                socket.talk("m", Config.popup_message_duration, `${count} level-42 ${tankLabel} on ${teamLabel} with ${buildLabel}, ${movementLabel}${noFire ? ", movement only" : ""}${respawn ? ", respawning when killed" : ""}.`);
             } break;
             case "1": {
                 //suicide squad
