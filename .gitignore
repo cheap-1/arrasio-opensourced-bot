@@ -1,0 +1,7 @@
+node_modules/
+*.lnk
+.env
+.env.*
+server/.env
+server/permanentBans.json
+*.log
