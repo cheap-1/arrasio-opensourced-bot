@@ -547,7 +547,7 @@ class socketManager {
             case "B": {
                 const action = m[0];
                 const body = player.body;
-                if (!["spawn", "clear"].includes(action) || (action === "spawn" ? m.length < 2 || m.length > 9 : m.length !== 1)) {
+                if (!["spawn", "clear"].includes(action) || (action === "spawn" ? m.length < 2 || m.length > 10 : m.length !== 1)) {
                     socket.kick("Malformed feed-bot request.");
                     return 1;
                 }
@@ -556,6 +556,9 @@ class socketManager {
                 const ownedBots = handler.feedBots.filter(bot => bot.master.id === body.id && !bot.isDead());
                 if (action === "clear") {
                     player.feedBotRespawnGeneration = (player.feedBotRespawnGeneration ?? 0) + 1;
+                    for (const queue of player.feedBotSpawnQueues ?? []) queue.cancelled = true;
+                    player.feedBotSpawnQueues?.clear();
+                    player.feedBotFormationIndex = 0;
                     for (const bot of ownedBots) {
                         if (bot.feedBotOptions) bot.feedBotOptions.respawn = false;
                         bot.kill();
@@ -566,8 +569,8 @@ class socketManager {
                     return;
                 }
                 const count = m[1];
-                if (!Number.isInteger(count) || count < 1 || count > 100) {
-                    socket.talk("m", Config.popup_message_duration, "Choose a spawn batch from 1 to 100.");
+                if (!Number.isSafeInteger(count) || count < 1) {
+                    socket.talk("m", Config.popup_message_duration, "Choose a positive whole number of bots.");
                     return;
                 }
                 const profile = m[2] ?? "random-damage";
@@ -577,6 +580,7 @@ class socketManager {
                 const respawnValue = m[6] ?? 0;
                 const noFireValue = m[7] ?? 0;
                 const spawnLocation = m[8] ?? "base";
+                const spawnRate = m[9] ?? "natural";
                 const respawn = respawnValue === 1;
                 const noFire = noFireValue === 1;
                 const upgradeBuilds = {
@@ -600,28 +604,21 @@ class socketManager {
                     socket.talk("m", Config.popup_message_duration, `Choose a team from 1 to ${Config.teams ?? 4}, or use My team.`);
                     return;
                 }
-                if (!["follow", "ram", "still", "tap"].includes(movement) || ![0, 1].includes(respawnValue) || ![0, 1].includes(noFireValue) || !["base", "player"].includes(spawnLocation)) {
+                if (!["follow", "ram", "still", "tap"].includes(movement) || ![0, 1].includes(respawnValue) || ![0, 1].includes(noFireValue) || !["base", "player"].includes(spawnLocation) || !["natural", "instant"].includes(spawnRate)) {
                     socket.talk("m", Config.popup_message_duration, "Choose a valid movement and respawn option.");
-                    return;
-                }
-                const globalCap = 1000;
-                const playerCap = 1000;
-                if (ownedBots.length + count > playerCap || handler.feedBots.filter(bot => !bot.isDead()).length + count > globalCap) {
-                    socket.talk("m", Config.popup_message_duration, "Feed bot limit reached (1,000 per player and 1,000 total).");
                     return;
                 }
                 const options = { profile, tankChoice, teamChoice, movement, respawn, noFire, spawnLocation };
                 const spawnFeedBot = ownerBody => {
                     if (!ownerBody || ownerBody.isDead()) return null;
-                    const currentOwnedBots = handler.feedBots.filter(bot => bot.master.id === ownerBody.id && !bot.isDead());
-                    if (currentOwnedBots.length >= playerCap || handler.feedBots.filter(bot => !bot.isDead()).length >= globalCap) return null;
                     const botTeam = options.teamChoice === "same" ? ownerBody.team : -Number(options.teamChoice);
                     const spawnPosition = options.spawnLocation === "player"
                         ? { x: ownerBody.x, y: ownerBody.y }
                         : global.getSpawnableArea(botTeam, global.gameManager);
                     const bot = new Entity(spawnPosition, ownerBody);
                     bot.define(options.tankChoice === "random" ? damageTanks[Math.floor(Math.random() * damageTanks.length)] : options.tankChoice);
-                    const formationIndex = currentOwnedBots.length;
+                    const formationIndex = player.feedBotFormationIndex ??= ownedBots.length;
+                    player.feedBotFormationIndex++;
                     const formationAngle = formationIndex * 2.399963229728653;
                     const formationRadius = 40 * Math.sqrt(formationIndex);
                     bot.feedBotFormationOffset = {
@@ -668,12 +665,39 @@ class socketManager {
                     });
                     return bot;
                 };
-                for (let i = 0; i < count; i++) spawnFeedBot(body);
+                if (spawnRate === "instant") {
+                    for (let i = 0; i < count; i++) spawnFeedBot(player.body);
+                } else {
+                    const queue = { cancelled: false };
+                    const queues = player.feedBotSpawnQueues ??= new Set();
+                    queues.add(queue);
+                    const generation = player.feedBotRespawnGeneration ?? 0;
+                    let remaining = count;
+                    const spawnNext = () => {
+                        if (queue.cancelled || generation !== (player.feedBotRespawnGeneration ?? 0)) {
+                            queues.delete(queue);
+                            return;
+                        }
+                        const currentBody = player.body;
+                        if (!currentBody || currentBody.isDead()) {
+                            queues.delete(queue);
+                            return;
+                        }
+                        spawnFeedBot(currentBody);
+                        if (--remaining <= 0) {
+                            queues.delete(queue);
+                            return;
+                        }
+                        setTimeout(spawnNext, 100 + Math.floor(Math.random() * 500));
+                    };
+                    setTimeout(spawnNext, Math.floor(Math.random() * 500));
+                }
                 const tankLabel = tankChoice === "random" ? "random damage tanks" : `${tankChoice} tanks`;
                 const teamLabel = teamChoice === "same" ? "your team" : `Team ${teamNumber}`;
                 const buildLabel = profile === "none" ? "no stat build" : `${profile} build`;
                 const movementLabel = movement === "still" ? "stationary" : movement === "tap" ? "short step movement" : movement === "ram" ? "ramming toward you" : "following your aim";
-                socket.talk("m", Config.popup_message_duration, `${count} level-42 ${tankLabel} on ${teamLabel} with ${buildLabel}, ${movementLabel}${noFire ? ", movement only" : ""}${respawn ? ", respawning when killed" : ""}.`);
+                const spawnRateLabel = spawnRate === "natural" ? "queued at a natural random rate" : "spawning instantly";
+                socket.talk("m", Config.popup_message_duration, `${count} level-42 ${tankLabel} on ${teamLabel} with ${buildLabel}, ${movementLabel}${noFire ? ", movement only" : ""}${respawn ? ", respawning when killed" : ""}; ${spawnRateLabel}.`);
             } break;
             case "1": {
                 //suicide squad

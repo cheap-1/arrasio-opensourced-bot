@@ -29,13 +29,14 @@ import * as socketStuff from "./socketinit.js";
     const feedBotTank = document.getElementById("feedBotTank");
     const feedBotTeam = document.getElementById("feedBotTeam");
     const feedBotSpawnLocation = document.getElementById("feedBotSpawnLocation");
+    const feedBotSpawnRate = document.getElementById("feedBotSpawnRate");
     const feedBotMovement = document.getElementById("feedBotMovement");
     const feedBotRespawn = document.getElementById("feedBotRespawn");
     const feedBotNoFire = document.getElementById("feedBotNoFire");
     document.getElementById("feedBotSpawn").addEventListener("click", () => {
         const count = Number(feedCount.value);
-        if (Number.isInteger(count) && count >= 1 && count <= 100 && global.socket) {
-            global.socket.talk("B", "spawn", count, feedBotUpgradeProfile.value, feedBotTank.value, feedBotTeam.value, feedBotMovement.value, feedBotRespawn.checked, feedBotNoFire.checked, feedBotSpawnLocation.value);
+        if (Number.isSafeInteger(count) && count >= 1 && global.socket) {
+            global.socket.talk("B", "spawn", count, feedBotUpgradeProfile.value, feedBotTank.value, feedBotTeam.value, feedBotMovement.value, feedBotRespawn.checked, feedBotNoFire.checked, feedBotSpawnLocation.value, feedBotSpawnRate.value);
         }
     });
     document.getElementById("feedBotClear").addEventListener("click", () => {
