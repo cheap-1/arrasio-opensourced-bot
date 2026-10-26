@@ -30,6 +30,8 @@ After the first install, you may use either `run.bat` (if you're on Windows) or 
 ## Server setup
 You can set up in-game servers in `server/config.js`. An example is present in the file.
 
+To give an account operator access, set the secret `SUKONOE_OPERATOR` token in `server/.env` and enter that token in the game's token field before connecting. The token is independent of the player's display name; keep it private.
+
 ### Controllable Sandbox bots
 The in-game **Feed Bots** panel supports mobile and desktop. Spawn up to 100 random level-42 damage tanks per batch (up to 1,000 per player and server), then use your aim/fire controls to direct them. Holding alt-fire sends them toward your aim and makes them attack. The panel's **Clear** button removes your swarm.
 

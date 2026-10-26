@@ -16,6 +16,11 @@ class gameHandler {
     // Collision stuff
     collide = (instance, other) => {
 
+        // Feed bots and their own projectiles never need to collide with one another.
+        const instanceOwner = instance.isFeedBot ? instance : instance.master?.isFeedBot ? instance.master : null;
+        const otherOwner = other.isFeedBot ? other : other.master?.isFeedBot ? other.master : null;
+        if (instanceOwner && instanceOwner === otherOwner) return 0;
+
         // Fast exit for noclip or ghosts
         if (instance.noclip || other.noclip) return 0;
 
@@ -209,6 +214,10 @@ class gameHandler {
         logs.master.set();
 
         // Do entities life
+        const profile = this.tickProfile ??= { controllers: 0, collision: 0, lastReport: Date.now(), nextConsoleSample: Date.now() + 5000 };
+        const consoleSample = Date.now() >= profile.nextConsoleSample;
+        if (consoleSample) profile.nextConsoleSample = Date.now() + 5000;
+        let timedControllers = false, timedCollision = false;
         logs.entities.set();
         grid.clear();
         for (const instance of entities.values()) {
@@ -238,7 +247,12 @@ class gameHandler {
                 logs.entities.tally();
                 // Think about my actions.
                 logs.life.set();
+                const controllerStart = performance.now();
+                const timeControllers = consoleSample && !timedControllers;
+                if (timeControllers) { console.time("controllers"); timedControllers = true; }
                 instance.life();
+                if (timeControllers) console.timeEnd("controllers");
+                profile.controllers += performance.now() - controllerStart;
                 logs.life.mark();
                 // Take a selfie.
                 logs.selfie.set();
@@ -253,11 +267,16 @@ class gameHandler {
             instance.updateAABB(instance.activation.active);
             // Check collisions.
             logs.collide.set();
+            const collisionStart = performance.now();
+            const timeCollision = consoleSample && !timedCollision;
+            if (timeCollision) { console.time("collision"); timedCollision = true; }
             for (const other of grid.query(instance.minX, instance.minY, instance.maxX, instance.maxY).values()) {
                 this.collide(instance, other);
             }
             if (instance.isInGrid) grid.insert(instance, instance.minX, instance.minY, instance.maxX, instance.maxY);
+            if (timeCollision) console.timeEnd("collision");
             logs.collide.mark();
+            profile.collision += performance.now() - collisionStart;
             if ((instance.touchingSizeWall === false || instance.collisionArray.length === 0) && instance.originalSize) {
                 instance.SIZE = instance.originalSize;
                 instance.originalSize = undefined;
@@ -277,11 +296,22 @@ class gameHandler {
         logs.master.mark();
         // Update lastCycle only once
         global.gameManager.room.lastCycle = util.time();
+        const socketStart = performance.now();
+        if (consoleSample) console.time("socket update");
         for (let i = 0; i < global.gameManager.clients.length; i++) {
             let client = global.gameManager.clients[i];
             if (client.status.readyToBroadcast) {
                 client.view.gazeUpon();
             }
+        }
+        if (consoleSample) console.timeEnd("socket update");
+        profile.socket = (profile.socket ?? 0) + performance.now() - socketStart;
+        if (Date.now() - profile.lastReport >= 5000) {
+            const sections = ["controllers", "collision", "socket"];
+            const slowest = sections.reduce((a, b) => profile[a] >= profile[b] ? a : b);
+            console.log(`[tick profile 5s] slowest=${slowest} controllers=${profile.controllers.toFixed(1)}ms collision=${profile.collision.toFixed(1)}ms socket=${profile.socket.toFixed(1)}ms`);
+            profile.controllers = profile.collision = profile.socket = 0;
+            profile.lastReport = Date.now();
         }
     };
 

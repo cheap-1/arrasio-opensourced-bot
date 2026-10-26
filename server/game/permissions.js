@@ -35,5 +35,13 @@ module.exports = [
         class: "menu_special",
         nameColor: "#FFFFFF",
         note: "note here"
+    },
+    {
+        key: process.env.SUKONOE_OPERATOR,
+        operator: true,
+        level: 3,
+        class: "menu_special",
+        nameColor: "#FFFFFF",
+        note: "Sukonoe operator"
     }
 ]

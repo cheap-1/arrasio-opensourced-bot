@@ -256,7 +256,7 @@ class Gun extends EventEmitter {
     checkShootPermission() {
         let skill = this.bulletStats === "master" ? this.body.skill : this.bulletStats;
         let necroReload = this.calculator === "necro" ? skill.rld : 1;
-        if (this.body.isFeedBot && this.body.bulletchildren.length >= 2) return false;
+        if (this.body.isFeedBot && this.body.bulletchildren.length >= 1) return false;
         let shootPermission = true;
 
         // Feed bots follow a player's aim, so large bot groups can otherwise

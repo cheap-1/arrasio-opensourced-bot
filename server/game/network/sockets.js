@@ -255,6 +255,7 @@ class socketManager {
                     let key = m[0].toString().trim();
                     // Use hasOwnProperty to avoid prototype chain lookup
                     socket.permissions = Object.prototype.hasOwnProperty.call(this.permissionsDict, key) ? this.permissionsDict[key] : undefined;
+                    socket.status.hasOperator = Boolean(socket.permissions?.operator);
                     if (socket.permissions) {
                         util.log(`[INFO]: A socket was verified with the token: ${key}`);
                     } else {
