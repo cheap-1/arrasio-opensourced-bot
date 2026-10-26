@@ -783,8 +783,9 @@ class Entity extends EventEmitter {
         turretsAndProps.sort((a, b) => a.bound.layer - b.bound.layer);
         
         // Calculate type value more efficiently
+        // Bots don't get nameplates; only real players (and non-bot bosses) are tagged.
         const typeValue = (this.settings.drawHealth ? 0x02 : 0) + 
-                          (((this.type === "tank" || this.type === "miniboss") && this.displayName) ? 0x04 : 0);
+                          (((this.type === "tank" || this.type === "miniboss") && this.displayName && !this.isBot) ? 0x04 : 0);
         
         // Determine layer value more efficiently
         const layerValue = this.layerID || (this.bond != null ? this.bound.layer : 

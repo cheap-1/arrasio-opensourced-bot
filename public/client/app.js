@@ -3401,8 +3401,8 @@ import * as socketStuff from "./socketinit.js";
                 var namecolor = instance.name.substring(0, 7);
                 ctx[1].globalAlpha = alpha * alpha * fade;
                 let g = Math.max(20, size);
-                if (global.GUIStatus.renderPlayerNames) drawText(name, x, y - g * (global.GUIStatus.renderPlayerScores ? 1.9 : 1.45), 0.55 * g, namecolor == "#FFFFFF" ? color.guiwhite : namecolor, "center", false, 1, true, ctx[1]);
-                if (global.GUIStatus.renderPlayerScores || typeof instance.score === "string") drawText(typeof instance.score === "string" ? instance.score : util.handleLargeNumber(instance.score, 1), x, y - 1.45 * g, 0.3 * g, namecolor == "#FFFFFF" ? color.guiwhite : namecolor, "center", false, 1, true, ctx[1]);
+                if (global.GUIStatus.renderPlayerNames) drawText(name, x, y - g * (global.GUIStatus.renderPlayerScores ? 1.9 : 1.45), 0.45 * g, namecolor == "#FFFFFF" ? color.guiwhite : namecolor, "center", false, 1, true, ctx[1]);
+                if (global.GUIStatus.renderPlayerScores || typeof instance.score === "string") drawText(typeof instance.score === "string" ? instance.score : util.handleLargeNumber(instance.score, 1), x, y - 1.45 * g, 0.25 * g, namecolor == "#FFFFFF" ? color.guiwhite : namecolor, "center", false, 1, true, ctx[1]);
                 ctx[1].globalAlpha = 1;
             }
         }
