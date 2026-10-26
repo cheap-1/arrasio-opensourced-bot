@@ -2,6 +2,48 @@ let EventEmitter = require("events");
 global.entitiesIdLog = 0;
 const forceTwiggle = ["autospin", "turnWithSpeed", "spin", "fastspin", "veryfastspin", "withMotion", "smoothWithMotion", "looseWithMotion"];
 const { combineStats } = require("../../lib/definitions/facilitators.js");
+
+// Kill notifications are batched per player so killing many things cannot flood the client.
+const KILL_NOTIFICATION_COOLDOWN = 1000;
+const killNotifications = new Map();
+
+const sendKillNotification = (recipient, names, prefix) => {
+    if (!names.length) return;
+    try {
+        recipient.sendMessage(`You ${prefix} ${util.listify(names)}.`);
+    } catch {
+        // The recipient may have disconnected before the notification was sent.
+    }
+};
+
+const scheduleKillNotificationFlush = recipient => {
+    const pending = killNotifications.get(recipient);
+    if (!pending || pending.timer) return;
+    pending.timer = setTimeout(() => {
+        const current = killNotifications.get(recipient);
+        if (!current) return;
+        current.timer = null;
+        if (!current.names.length) {
+            killNotifications.delete(recipient);
+            return;
+        }
+        sendKillNotification(recipient, current.names.splice(0), current.prefix);
+        scheduleKillNotificationFlush(recipient);
+    }, KILL_NOTIFICATION_COOLDOWN);
+};
+
+const queueKillNotification = (recipient, name, withHelp, prefix) => {
+    const label = withHelp ? `${name} (with some help)` : name;
+    let pending = killNotifications.get(recipient);
+    if (!pending) {
+        sendKillNotification(recipient, [label], prefix);
+        pending = { names: [], prefix, timer: null };
+        killNotifications.set(recipient, pending);
+        scheduleKillNotificationFlush(recipient);
+        return;
+    }
+    pending.names.push(label);
+};
 class Entity extends EventEmitter {
     constructor(position, master) {
         super();
@@ -1174,9 +1216,9 @@ class Entity extends EventEmitter {
                         killText += instance.name == "" ? killText == "" ? "An unnamed player" : "an unnamed player" : instance.name;
                         killText += " and ";
                     }
-                    // Only if we give messages
-                    if (doISendAText) {
-                        instance.sendMessage(`You ${this.settings.killMessage ??= "killed"} ${name}` + (killers.length > 1 ? " (with some help)." : "."));
+                    // Only notify real players when they kill a player-like entity.
+                    if (doISendAText && (this.isPlayer || this.isTeamBot) && instance.isPlayer) {
+                        queueKillNotification(instance, name, killers.length > 1, this.settings.killMessage ?? "killed");
                     }
                 }
                 // Prepare the next part of the next
