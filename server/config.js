@@ -16,7 +16,7 @@ module.exports = {
     client_update_rate: 30, // Maximum snapshots sent to a client per second. Lower this to save bandwidth on slow hosting.
     client_update_rate_heavy: 20, // Snapshot rate used when a client has a lot of entities on screen (keeps big scenes from flooding the connection).
     heavy_snapshot_entities: 500, // Entity count above which the heavy snapshot rate kicks in.
-    feed_bot_cap: 2000, // Maximum live plus queued feed bots per server; raise carefully for larger machines.
+    feed_bot_cap: 0, // Maximum live plus queued feed bots per server; 0 disables the cap.
     feed_bot_skill_delay_min_ms: 450, // Skill allocation delay in milliseconds.
     feed_bot_skill_delay_max_ms: 450,
     feed_bot_tank_upgrade_delay_min_ms: 450, // Tank upgrade delay in milliseconds.
@@ -66,7 +66,7 @@ module.exports = {
             serverhost: "Local",
             location: "Localhost",
             gamemode: ["ffa"],
-            player_cap: 80,
+            player_cap: 0,
 
             featured: false,
             unlisted: false,
@@ -101,7 +101,7 @@ module.exports = {
             serverhost: "Local",
             location: "Localhost",
             gamemode: ["maze"],
-            player_cap: 80,
+            player_cap: 0,
 
             featured: false,
             unlisted: false,
@@ -121,7 +121,7 @@ module.exports = {
             serverhost: "Local",
             location: "Localhost",
             gamemode: ["tdm"],
-            player_cap: 80,
+            player_cap: 0,
 
             featured: false,
             unlisted: false,
@@ -155,7 +155,7 @@ module.exports = {
             serverhost: "Local",
             location: "Localhost",
             gamemode: ["mothership"],
-            player_cap: 80,
+            player_cap: 0,
 
             featured: false,
             unlisted: false,
@@ -177,7 +177,7 @@ module.exports = {
             serverhost: "Local",
             location: "Localhost",
             gamemode: ["growth", "tdm"],
-            player_cap: 80,
+            player_cap: 0,
 
             featured: false,
             unlisted: false,
@@ -198,7 +198,7 @@ module.exports = {
             serverhost: "Local",
             location: "Localhost",
             gamemode: ["growth", "siege_classic"],
-            player_cap: 80,
+            player_cap: 0,
 
             featured: false,
             unlisted: false,
@@ -216,7 +216,7 @@ module.exports = {
             serverhost: "Local",
             location: "Localhost",
             gamemode: ["sandbox"],
-            player_cap: 80,
+            player_cap: 0,
 
             featured: false,
             unlisted: false,

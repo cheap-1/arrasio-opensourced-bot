@@ -730,8 +730,11 @@ class socketManager {
                     socket.talk("m", Config.popup_message_duration, "Choose a valid movement and respawn option.");
                     return;
                 }
-                const availableCount = Math.max(0, Config.feed_bot_cap - handler.feedBots.length - this.pendingFeedBotCount());
-                if (availableCount === 0) {
+                const hasFeedBotCap = Number.isFinite(Config.feed_bot_cap) && Config.feed_bot_cap > 0;
+                const availableCount = hasFeedBotCap
+                    ? Math.max(0, Config.feed_bot_cap - handler.feedBots.length - this.pendingFeedBotCount())
+                    : requestedCount;
+                if (hasFeedBotCap && availableCount === 0) {
                     socket.talk("m", Config.popup_message_duration, `The server feed-bot limit (${Config.feed_bot_cap}) has been reached.`);
                     return;
                 }
@@ -739,7 +742,7 @@ class socketManager {
                 const options = { profile, tankChoice, teamChoice, movement, respawn, noFire, spawnLocation };
                 const spawnFeedBot = ownerBody => {
                     if (!ownerBody || ownerBody.isDead()) return null;
-                    if (handler.feedBots.length >= Config.feed_bot_cap) return null;
+                    if (hasFeedBotCap && handler.feedBots.length >= Config.feed_bot_cap) return null;
                     const botTeam = options.teamChoice === "same" ? ownerBody.team : -Number(options.teamChoice);
                     const formationIndex = player.feedBotFormationIndex ??= ownedBots.length;
                     player.feedBotFormationIndex++;
@@ -790,7 +793,7 @@ class socketManager {
                             if (generation !== (player.feedBotRespawnGeneration ?? 0)) return;
                             const respawnOwner = player.body;
                             if (!respawnOwner || respawnOwner.isDead()) return;
-                            if (handler.feedBots.length + this.pendingFeedBotCount() >= Config.feed_bot_cap) return;
+                            if (hasFeedBotCap && handler.feedBots.length + this.pendingFeedBotCount() >= Config.feed_bot_cap) return;
                             spawnFeedBot(respawnOwner);
                         }, 1000);
                     });
@@ -803,7 +806,7 @@ class socketManager {
                 const buildLabel = profile === "none" ? "no stat build" : `${profile} build`;
                 const movementLabel = movement === "still" ? "stationary" : movement === "tap" ? "short step movement" : movement === "ram" ? "ramming toward you" : "following your aim";
                 const spawnRateLabel = spawnRate === "natural" ? "queued at a natural random rate" : "queued at a fast server-paced rate";
-                const capNote = requestedCount > count ? ` The server can add ${count} now before reaching its ${Config.feed_bot_cap}-bot limit.` : "";
+                const capNote = hasFeedBotCap && requestedCount > count ? ` The server can add ${count} now before reaching its ${Config.feed_bot_cap}-bot limit.` : "";
                 socket.talk("m", Config.popup_message_duration, `${count} level-42 ${tankLabel} on ${teamLabel} with ${buildLabel}, ${movementLabel}${noFire ? ", movement only" : ""}${respawn ? ", respawning when killed" : ""}; bots assign skills and take tank upgrades with randomized human-like delays, while spawns are ${spawnRateLabel}.${capNote}`);
             } break;
             case "1": {
