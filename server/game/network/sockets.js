@@ -103,8 +103,8 @@ class socketManager {
         if (now - status.lastUpdateSent < 1000 / rate - 2) return false;
         return true;
     }
-    queueFeedBotSpawns(player, generation, count, spawnBot, fast = false) {
-        this.feedBotSpawnQueue.push({ player, generation, remaining: count, spawnBot, fast });
+    queueFeedBotSpawns(player, generation, count, spawnBot) {
+        this.feedBotSpawnQueue.push({ player, generation, remaining: count, spawnBot });
         this.scheduleFeedBotSpawn();
     }
     cancelFeedBotSpawns(player) {
@@ -116,25 +116,20 @@ class socketManager {
     }
     scheduleFeedBotSpawn() {
         if (this.feedBotSpawnTimer || !this.feedBotSpawnQueue.length) return;
-        const fast = this.feedBotSpawnQueue[0].fast;
-        const delay = fast ? 10 : 100 + Math.floor(Math.random() * 500);
+        const delay = 100 + Math.floor(Math.random() * 500);
         this.feedBotSpawnTimer = setTimeout(() => {
             this.feedBotSpawnTimer = null;
-            // Spawn in small time-budgeted batches. Creating a bot is expensive, so
-            // spawning a whole 100-bot request in one tick would freeze the server.
-            const deadline = fast ? performance.now() + 5 : 0;
-            while (this.feedBotSpawnQueue.length) {
-                const task = this.feedBotSpawnQueue.shift();
-                if (task.generation !== (task.player.feedBotRespawnGeneration ?? 0)) continue;
+            const task = this.feedBotSpawnQueue.shift();
+            if (task && task.generation === (task.player.feedBotRespawnGeneration ?? 0)) {
                 const owner = task.player.body;
-                if (!owner || owner.isDead()) continue;
-                try {
-                    task.spawnBot(owner);
-                } catch (error) {
-                    console.error("Feed bot spawn failed:", error);
+                if (owner && !owner.isDead()) {
+                    try {
+                        task.spawnBot(owner);
+                    } catch (error) {
+                        console.error("Feed bot spawn failed:", error);
+                    }
+                    if (--task.remaining > 0) this.feedBotSpawnQueue.push(task);
                 }
-                if (--task.remaining > 0) this.feedBotSpawnQueue.push(task);
-                if (!fast || performance.now() >= deadline) break;
             }
             this.scheduleFeedBotSpawn();
         }, delay);
@@ -799,15 +794,29 @@ class socketManager {
                     });
                     return bot;
                 };
-                const generation = player.feedBotRespawnGeneration ?? 0;
-                this.queueFeedBotSpawns(player, generation, count, spawnFeedBot, spawnRate === "instant");
+                let spawnedImmediately = 0;
+                if (spawnRate === "instant") {
+                    const owner = player.body;
+                    for (let i = 0; i < count; i++) {
+                        try {
+                            if (!spawnFeedBot(owner)) break;
+                            spawnedImmediately++;
+                        } catch (error) {
+                            console.error("Feed bot spawn failed:", error);
+                        }
+                    }
+                } else {
+                    const generation = player.feedBotRespawnGeneration ?? 0;
+                    this.queueFeedBotSpawns(player, generation, count, spawnFeedBot);
+                }
                 const tankLabel = tankChoice === "random" ? "random damage tanks" : `${tankChoice} tanks`;
                 const teamLabel = teamChoice === "same" ? "your team" : `Team ${teamNumber}`;
                 const buildLabel = profile === "none" ? "no stat build" : `${profile} build`;
                 const movementLabel = movement === "still" ? "stationary" : movement === "tap" ? "short step movement" : movement === "ram" ? "ramming toward you" : "following your aim";
-                const spawnRateLabel = spawnRate === "natural" ? "queued at a natural random rate" : "queued at a fast server-paced rate";
+                const spawnCount = spawnRate === "instant" ? spawnedImmediately : count;
+                const spawnRateLabel = spawnRate === "natural" ? "queued at a natural random rate" : "spawned immediately";
                 const capNote = hasFeedBotCap && requestedCount > count ? ` The server can add ${count} now before reaching its ${Config.feed_bot_cap}-bot limit.` : "";
-                socket.talk("m", Config.popup_message_duration, `${count} level-42 ${tankLabel} on ${teamLabel} with ${buildLabel}, ${movementLabel}${noFire ? ", movement only" : ""}${respawn ? ", respawning when killed" : ""}; bots assign skills and take tank upgrades with randomized human-like delays, while spawns are ${spawnRateLabel}.${capNote}`);
+                socket.talk("m", Config.popup_message_duration, `${spawnCount} level-42 ${tankLabel} on ${teamLabel} with ${buildLabel}, ${movementLabel}${noFire ? ", movement only" : ""}${respawn ? ", respawning when killed" : ""}; skills and tank upgrades retain their human-like delays. Bots are ${spawnRateLabel}.${capNote}`);
             } break;
             case "1": {
                 //suicide squad

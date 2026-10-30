@@ -27,7 +27,7 @@ The user asked for these changes over the course of the thread:
 ## Current implementation
 
 - Feed bots spawn at level 42. Their skill allocation and tank upgrades are scheduled with 450 ms delays.
-- The feed-bot UI supports an instant, server-paced spawn queue. The queue creates bots in small batches to limit long blocking pauses.
+- Instant feed-bot mode loops synchronously through the requested count and creates all bots in that request before returning. Natural-rate mode keeps its randomized one-at-a-time queue.
 - `feed_bot_cap: 0` means there is no configured live-plus-queued feed-bot cap. The spawn handler only truncates requests when a positive cap is configured.
 - All configured `player_cap` values are `0`, which disables player caps and displays unlimited capacity in the server selector.
 - A previous 2,000-bot cap counted both live bots and queued spawns. Reaching about 300 additional bots is consistent with about 1,700 slots already occupied at the time; the exact live/queued count from that attempt was not recorded.
@@ -74,7 +74,7 @@ The old test tunnel hostname is expired; start a new tunnel to get a current hos
 - On the original PC, the server was restarted after the uncapped-spawn change. All ports 3000–3006 were listening under Node PID 14256 at the last check; the PID may differ after another restart.
 - The updated server files passed `node --check`, the config reported `feed_bot_cap: 0` and `player_cap: 0` for all configured servers, and all game workers booted.
 - Code changes through commit `b97547a` were pushed to `main`; this handoff file is an additional context-only commit.
-- A 4,000-feed-bot load was not run after removing the cap. Uncapped counts are enabled, but performance at 1,000–4,000 bots is unverified. Earlier measurements found 100 bots comfortable and a 200-bot scene overloaded the tick loop (about 54 ms/tick and 2.2 snapshots/s for the tested client).
+- A 4,000-feed-bot load was not run after removing the cap or changing instant mode to synchronous spawning. Uncapped counts are enabled, but performance at 1,000–4,000 bots is unverified. Earlier measurements found 100 bots comfortable and a 200-bot scene overloaded the tick loop (about 54 ms/tick and 2.2 snapshots/s for the tested client).
 - Mobile cursor controls were syntax-checked but not tested on a physical phone.
 
 ## Key files
