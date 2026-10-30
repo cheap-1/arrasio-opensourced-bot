@@ -676,7 +676,8 @@ class Entity extends EventEmitter {
     }
 
     updateBodyInfo() {
-        this.fov = 1 * this.FOV * 275 * Math.sqrt(this.size); 
+        const growthRatio = Math.max(1, this.size / (this.coreSize || this.SIZE || 1));
+        this.fov = this.FOV * 275 * Math.sqrt(this.size * growthRatio);
     }
 
     bindToMaster(position, bond, isInvulnerable) {
