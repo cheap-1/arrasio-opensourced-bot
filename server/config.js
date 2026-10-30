@@ -9,6 +9,24 @@ module.exports = {
 
     // Server
     visible_list_interval: 250, // How often to update the list of the entities that players can see. Has effects of when entities are activated.
+    visible_x_margin: 1.2, // Extra room around the screen edges horizontally (1 = exactly the visible area). Lower = less bandwidth.
+    visible_y_margin: 1.25, // Extra room around the screen edges vertically (1 = exactly the visible area). Lower = less bandwidth.
+    visible_bullet_margin: 1.1, // Extra room for bullets. 1 = exactly the visible area.
+    tick_profiling: false, // Log a per-5s breakdown of the tick cost; adds overhead, so it is off by default.
+    client_update_rate: 30, // Maximum snapshots sent to a client per second. Lower this to save bandwidth on slow hosting.
+    client_update_rate_heavy: 20, // Snapshot rate used when a client has a lot of entities on screen (keeps big scenes from flooding the connection).
+    heavy_snapshot_entities: 500, // Entity count above which the heavy snapshot rate kicks in.
+    feed_bot_cap: 2000, // Maximum live plus queued feed bots per server; raise carefully for larger machines.
+    feed_bot_skill_delay_min_ms: 450, // Skill allocation delay in milliseconds.
+    feed_bot_skill_delay_max_ms: 450,
+    feed_bot_tank_upgrade_delay_min_ms: 450, // Tank upgrade delay in milliseconds.
+    feed_bot_tank_upgrade_delay_max_ms: 450,
+    max_client_updates_in_flight: 2, // Snapshots that may be waiting for a client acknowledgement before we stop sending more.
+    max_client_socket_buffer: 262144, // Skip snapshots while the WebSocket has more than this many bytes queued to send.
+    client_downlink_timeout: 2000, // If a client stops acknowledging snapshots for this long (ms), resume sending instead of freezing it.
+    enable_websocket_compression: true, // Compress large packets (snapshots/mockups) with per-message deflate. Cuts bandwidth roughly in half.
+    websocket_compression_threshold: 1024, // Only compress packets at least this many bytes.
+    proxy_game_servers: "auto", // Let players join every game server through the main server (needed when only the main port is exposed, e.g. Cloudflare Tunnel). "auto" only proxies when the server is reached through a different host than Config.host.
     startup_logs: true, // Enable detailed startup logs and log speed loop warnings in the terminal
     load_all_mockups: false, // Set to true if you want every mockup to be loaded when the server starts. May noticeably slow down server startup.
     editor: true, // Enable the editor at '[host]/ext/editor'.
@@ -168,6 +186,24 @@ module.exports = {
             properties: {
                 teams: 4
             }
+        },
+        {
+            share_client_server: false,
+            host: process.env.ARRAS_SERVER_HOST_3006 || "localhost:3006",
+            port: 3006,
+            id: "lf",
+
+            region: "Local",
+            serverhost: "Local",
+            location: "Localhost",
+            gamemode: ["growth", "siege_classic"],
+            player_cap: 80,
+
+            featured: false,
+            unlisted: false,
+            private: false,
+
+            properties: {}
         },
         {
             share_client_server: true,

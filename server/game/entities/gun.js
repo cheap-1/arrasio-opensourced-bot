@@ -2,6 +2,16 @@
 let EventEmitter = require("events"),
     events,
     init = g => events = g.events;
+
+const getFeedBotOwner = body => {
+    let current = body;
+    for (let depth = 0; current && depth < 5; depth++) {
+        if (current.isFeedBot) return current;
+        current = current.bond ?? current.source ?? current.master;
+    }
+    return undefined;
+};
+
 class Gun extends EventEmitter {
     constructor(body, info) {
         super();
@@ -427,9 +437,16 @@ class Gun extends EventEmitter {
         }
         o.coreSize = o.SIZE;
         o.team = this.master.team;
+        const feedBot = getFeedBotOwner(this.body);
+        if (feedBot) {
+            o.team = feedBot.team;
+            o.color.base = o.color.base ?? feedBot.color.base;
+        }
     }
     bulletInit(o) {
     // Define it by its natural properties
+        const feedBot = getFeedBotOwner(this.body);
+        const colorSource = feedBot ?? this.body.master;
         o.color.base = undefined;
         o.color.hueShift = undefined;
         o.color.saturationShift = undefined;
@@ -441,11 +458,11 @@ class Gun extends EventEmitter {
             BODY: this.interpret(),
             SKILL: this.getSkillRaw()
         }, false);
-        o.color.base = o.color.base ?? this.body.master.color.base;
-        o.color.hueShift = o.color.hueShift ?? this.body.master.color.hueShift;
-        o.color.saturationShift = o.color.saturationShift ?? this.body.master.color.saturationShift;
-        o.color.brightnessShift = o.color.brightnessShift ?? this.body.master.color.brightnessShift;
-        o.color.allowBrightnessInvert = o.color.allowBrightnessInvert ?? this.body.master.color.allowBrightnessInvert;
+        o.color.base = o.color.base ?? colorSource.color.base;
+        o.color.hueShift = o.color.hueShift ?? colorSource.color.hueShift;
+        o.color.saturationShift = o.color.saturationShift ?? colorSource.color.saturationShift;
+        o.color.brightnessShift = o.color.brightnessShift ?? colorSource.color.brightnessShift;
+        o.color.allowBrightnessInvert = o.color.allowBrightnessInvert ?? colorSource.color.allowBrightnessInvert;
         o.SIZE = (this.body.size * this.width * this.settings.size) / 2;
         // Keep track of it and give it the function it needs to deutil.log itself upon death
         if (this.countsOwnKids) {
@@ -461,6 +478,7 @@ class Gun extends EventEmitter {
             this.bulletchildren.push(o);
         };
         o.source = this.body;
+        if (feedBot) o.team = feedBot.team;
         o.facing = o.velocity.direction;
         // Set all necroType gun references to parent gun
         for (let shape of o.settings.necroTypes) {

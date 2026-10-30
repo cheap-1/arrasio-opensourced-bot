@@ -9,6 +9,7 @@ const url = require("url");
 const pjson = require("../package.json")
 
 const { Worker } = require("worker_threads");
+const { WebSocket } = require("ws");
 
 // Increase the stack trace limit for better debugging
 Error.stackTraceLimit = Infinity;
@@ -60,7 +61,13 @@ let server; // HTTP server instance
 // Attempt to create a WebSocket server instance using the 'ws' package
 try {
     const WebSocketServer = require("ws").WebSocketServer;
-    wsServer = new WebSocketServer({ noServer: true });
+    wsServer = new WebSocketServer({
+        noServer: true,
+        perMessageDeflate: !!Config.enable_websocket_compression && {
+            threshold: Config.websocket_compression_threshold,
+            zlibDeflateOptions: { level: 1 }
+        }
+    });
 } catch(err) {
     throw new Error(
         "Package 'ws' is not installed! To install it, run 'npm install ws' in the terminal."
@@ -71,6 +78,94 @@ try {
 if (Config.allow_ACAO && Config.startup_logs) {
     util.warn("Access-Control-Allow-Origin is enabled, which allows any server/client to access data from the WebServer.");
 }
+
+/* ---------------------------------------------------------------------------
+ * Game server proxy.
+ *
+ * Every game server normally listens on its own port. When only the main port
+ * is reachable (for example behind a Cloudflare Tunnel, a reverse proxy or a
+ * firewall) nobody else can join those servers because the client is told to
+ * connect to "localhost:3001" and friends.
+ *
+ * The main server can therefore act as a WebSocket proxy: a client connects to
+ * "wss://<main host>/<server id>" and the connection is forwarded to the game
+ * server running on that id. The address that is published to clients is
+ * picked automatically, so a server reached through a tunnel keeps working for
+ * remote players while local players can still connect directly.
+ * ------------------------------------------------------------------------ */
+
+// The host the client used to reach the main server (may be a tunnel hostname).
+const getRequestHost = req => req.headers.host || Config.host;
+
+// Should the clients be pointed at the proxy instead of the game server ports?
+const shouldProxy = (requestHost, mode = Config.proxy_game_servers) => {
+    if (mode === true) return true;
+    if (mode === false) return false;
+    // "auto": only proxy when the main server is reached through another host
+    // (a tunnel or a reverse proxy), otherwise the game server ports are usable.
+    return requestHost !== Config.host;
+};
+
+// The address a client should use to reach a given game server.
+const getPublicServerAddress = (server, requestHost) => {
+    if (!server) return requestHost || Config.host;
+    if (!shouldProxy(requestHost)) return server.ip;
+    const host = requestHost || Config.host;
+    if (server.gameManager) return host; // The sandbox runs inside the main server.
+    return `${host}/${server.id}`;
+};
+
+// Forward a WebSocket connection to a game server running on this machine.
+const proxyGameServer = (req, socket, head, target, upstreamPath) => {
+    const clientIp = req.headers["cf-connecting-ip"] ||
+        (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
+        req.headers["x-real-ip"] ||
+        (req.socket && req.socket.remoteAddress);
+    const headers = {};
+    if (clientIp) headers["x-forwarded-for"] = clientIp;
+    // Keep the host the player actually connected through (a tunnel hostname, for
+    // example). The game server needs it to send the player back to an address
+    // they can actually reach when they travel to another server.
+    const originalHost = req.headers.host;
+    if (originalHost) {
+        headers["host"] = originalHost;
+        headers["x-forwarded-host"] = originalHost;
+    }
+    let upstream;
+    try {
+        upstream = new WebSocket(`ws://127.0.0.1:${target.port}${upstreamPath}`, {
+            headers,
+            // The payload is already compressed on the client side, so don't
+            // compress it a second time on the local hop.
+            perMessageDeflate: false
+        });
+    } catch (e) {
+        try { socket.destroy(); } catch {}
+        return;
+    }
+    upstream.binaryType = "arraybuffer";
+    const abort = () => { try { socket.destroy(); } catch {} };
+    upstream.once("open", () => {
+        wsServer.handleUpgrade(req, socket, head, ws => {
+            ws.on("message", (data, isBinary) => {
+                if (upstream.readyState === WebSocket.OPEN) upstream.send(data, { binary: isBinary });
+            });
+            upstream.on("message", (data, isBinary) => {
+                if (ws.readyState === WebSocket.OPEN) ws.send(data, { binary: isBinary });
+            });
+            const closeBoth = () => {
+                try { upstream.close(); } catch {}
+                try { ws.close(); } catch {}
+            };
+            ws.on("close", closeBoth);
+            ws.on("error", closeBoth);
+            upstream.on("close", () => { try { ws.close(); } catch {} });
+            upstream.on("error", () => { try { ws.close(); } catch {} });
+        });
+    });
+    upstream.once("error", abort);
+    socket.on("error", abort);
+};
 
 // Create an HTTP server to handle both API and static file requests
 server = http.createServer((req, res) => {
@@ -94,8 +189,13 @@ server = http.createServer((req, res) => {
         if (server.ip !== Config.host && server.ip) {
             let http = server.ip.startsWith("localhost") ? `http://${server.ip}` : `https://${server.ip}`;
             serversIP.push(http);
-        } 
+        }
     };
+    // The host the client used to reach us is always allowed to talk to us.
+    if (req.headers.host) {
+        serversIP.push(`http://${req.headers.host}`);
+        serversIP.push(`https://${req.headers.host}`);
+    }
     if (Config.allow_ACAO || serversIP.includes(req.headers.origin)) {
         res.setHeader("Access-Control-Allow-Origin", "*");
         res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -110,8 +210,9 @@ server = http.createServer((req, res) => {
     switch (pathname) {
         case "/getServers.json": {
             // Serve a list of active servers (excluding hidden ones)
+            const requestHost = getRequestHost(req);
             readString = JSON.stringify(servers.filter((s) => s && !s.hidden).map((server) => ({
-                ip: server.ip,
+                ip: getPublicServerAddress(server, requestHost),
                 players: server.players,
                 maxPlayers: server.maxPlayers,
                 id: server.id,
@@ -173,6 +274,7 @@ server = http.createServer((req, res) => {
             ok = false;
             let sserver = [];
             if (Config.allow_server_travel && global.launchedOnMainServer) {
+                const requestHost = getRequestHost(req);
                 for (let i = 0; i < global.servers.length; i++) {
                     let server = global.servers[i];
                     if (server.gameManager) sserver.push(server);
@@ -180,6 +282,8 @@ server = http.createServer((req, res) => {
                 res.writeHead(200);
                 res.end(JSON.stringify(sserver.map((server) => ({
                     ip: server.ip,
+                    publicIp: getPublicServerAddress(server, requestHost),
+                    id: server.id,
                     players: server.players,
                     gameMode: server.gameMode
                 }))));
@@ -332,6 +436,21 @@ server.listen(Config.port, () => {
 
 // Upgrade HTTP connections to WebSocket connections if applicable
 server.on("upgrade", (req, socket, head) => {
+    // A path like "/la" or "/la/api/editor" targets a specific game server.
+    // Forward those connections to that server so players only need the main port.
+    const rawUrl = req.url || "/";
+    const queryIndex = rawUrl.indexOf("?");
+    const rawPath = queryIndex === -1 ? rawUrl : rawUrl.slice(0, queryIndex);
+    const query = queryIndex === -1 ? "" : rawUrl.slice(queryIndex);
+    const segments = rawPath.split("/").filter(Boolean);
+    if (segments.length) {
+        const target = global.servers.find(s => s && s.id === segments[0]);
+        if (target && !target.gameManager && target.port && target.port !== Config.port) {
+            const rest = segments.slice(1).join("/");
+            proxyGameServer(req, socket, head, target, (rest ? "/" + rest : "/") + query);
+            return;
+        }
+    }
     wsServer.handleUpgrade(req, socket, head, (ws) => {
         if (global.launchedOnMainServer) {
             for (let i = 0; i < global.servers.length; i++) {

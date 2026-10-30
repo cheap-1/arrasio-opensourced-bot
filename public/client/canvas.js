@@ -12,16 +12,29 @@ class Canvas {
         this.socket = global.socket;
         this.directions = [];
         this.chatListener = function(id, event) {
-            if (!["Enter", "Escape"].includes(event.code)) return;
-            this[id].blur();
+            const submit = event.key === "Enter" || event.code === "Enter" || event.code === "NumpadEnter";
+            const cancel = event.key === "Escape" || event.code === "Escape";
+            if (!submit && !cancel) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const input = this[id];
+            const message = input.value;
+            input.value = "";
+            input.blur();
             this.cv.focus();
             global.showChat = false;
+            const chatBox = this.chatBox;
             setTimeout(() => {
-                if (!this.chatBox.loadedProperly) this.chatBox.remove(), this.chatInput.remove(), this.chatBox = false;
-            }, 50)
-            if (!this[id].value) return;
-            if (event.code === "Enter") this.socket.talk("M", this[id].value);
-            this[id].value = "";
+                if (chatBox && !chatBox.loadedProperly && this.chatBox === chatBox) {
+                    chatBox.remove();
+                    input.remove();
+                    this.chatBox = false;
+                }
+            }, 50);
+            if (submit && message.trim()) {
+                const socket = global.socket?.open ? global.socket : this.socket;
+                if (socket?.open) socket.talk("M", message);
+            }
         }
 
         this.cv = document.getElementById("gameCanvas");

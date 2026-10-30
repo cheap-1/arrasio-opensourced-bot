@@ -1,9 +1,38 @@
+const randomFeedBotDelay = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+
+const findFeedBotTankUpgradePath = targetTank => {
+    if (!targetTank || targetTank === "basic") return [];
+    const pending = [{ tank: "basic", path: [] }];
+    const seen = new Set(["basic"]);
+    while (pending.length) {
+        const current = pending.shift();
+        const definition = Class[current.tank];
+        if (!definition) continue;
+        for (let tier = 1; tier <= 4; tier++) {
+            const upgrades = definition[`UPGRADES_TIER_${tier}`] ?? [];
+            for (const upgrade of upgrades) {
+                const candidates = Array.isArray(upgrade) ? upgrade.filter(name => typeof name === "string") : [upgrade];
+                for (const tank of candidates) {
+                    if (typeof tank !== "string" || !Class[tank]) continue;
+                    const path = [...current.path, { tank, tier }];
+                    if (tank === targetTank) return path;
+                    if (seen.has(tank)) continue;
+                    seen.add(tank);
+                    pending.push({ tank, path });
+                }
+            }
+        }
+    }
+    return null;
+};
+
 class gameHandler {
     constructor() {
         this.loopCounter = 0;
         this.loophealCounter = 0;
         this.bots = [];
         this.feedBots = [];
+        this.feedBotIndices = new Map();
         this.foods = [];
         this.nestFoods = [];
         this.enemyFoods = [];
@@ -12,14 +41,109 @@ class gameHandler {
         this.bossTimer = 0;
         this.active = false;
     }
+    addFeedBot(bot) {
+        if (this.feedBotIndices.has(bot.id)) return;
+        this.feedBotIndices.set(bot.id, this.feedBots.length);
+        this.feedBots.push(bot);
+    }
+    removeFeedBot(bot) {
+        const index = this.feedBotIndices.get(bot.id);
+        if (index === undefined) return;
+        const lastIndex = this.feedBots.length - 1;
+        const lastBot = this.feedBots[lastIndex];
+        if (index !== lastIndex) {
+            this.feedBots[index] = lastBot;
+            this.feedBotIndices.set(lastBot.id, index);
+        }
+        this.feedBots.pop();
+        this.feedBotIndices.delete(bot.id);
+    }
+    startFeedBotProgression(bot, targetTank, skillBuild) {
+        let upgradePath = findFeedBotTankUpgradePath(targetTank);
+        if (upgradePath === null) upgradePath = [{ tank: targetTank, tier: 3, force: true }];
+        upgradePath = upgradePath.map(step => ({
+            ...step,
+            force: step.force || Config.tier_multiplier * step.tier > 42
+        }));
+        bot.feedBotProgression = {
+            maxLevel: 42,
+            skillBuild: skillBuild.slice(),
+            upgradePath,
+            upgradeIndex: 0,
+            nextSkillAt: null,
+            nextTankUpgradeAt: null
+        };
+        while (bot.skill.level < 42) {
+            bot.skill.score += bot.skill.levelScore;
+            bot.skill.maintain();
+        }
+        bot.refreshBodyAttributes();
+    }
+    updateFeedBotProgression(now = Date.now()) {
+        for (const bot of this.feedBots) {
+            const progression = bot.feedBotProgression;
+            if (!progression || bot.isDead()) continue;
+
+            const upgradeStep = progression.upgradePath[progression.upgradeIndex];
+            if (upgradeStep && bot.skill.level >= Math.min(progression.maxLevel, Config.tier_multiplier * upgradeStep.tier)) {
+                if (progression.nextTankUpgradeAt === null) {
+                    progression.nextTankUpgradeAt = now + randomFeedBotDelay(
+                        Config.feed_bot_tank_upgrade_delay_min_ms,
+                        Config.feed_bot_tank_upgrade_delay_max_ms
+                    );
+                }
+                if (now >= progression.nextTankUpgradeAt) {
+                    const upgradeIndex = bot.upgrades.findIndex(upgrade => {
+                        const candidates = Array.isArray(upgrade.class) ? upgrade.class : [upgrade.class];
+                        return candidates.includes(upgradeStep.tank);
+                    });
+                    let upgraded = upgradeIndex >= 0 && bot.upgrade(upgradeIndex, bot.upgrades[upgradeIndex].branch, true);
+                    if (!upgraded && upgradeStep.force) {
+                        bot.define(upgradeStep.tank);
+                        upgraded = true;
+                    }
+                    if (upgraded) {
+                        bot.refreshBodyAttributes();
+                        progression.upgradeIndex++;
+                        progression.nextTankUpgradeAt = null;
+                    } else {
+                        progression.nextTankUpgradeAt = now + 500;
+                    }
+                }
+            }
+
+            if (!progression.skillBuild.length || !bot.skill.points) {
+                progression.nextSkillAt = null;
+                continue;
+            }
+            if (progression.nextSkillAt === null) {
+                progression.nextSkillAt = now + randomFeedBotDelay(
+                    Config.feed_bot_skill_delay_min_ms,
+                    Config.feed_bot_skill_delay_max_ms
+                );
+            }
+            if (now >= progression.nextSkillAt) {
+                const availableStats = progression.skillBuild.filter(stat => bot.skill.amount(stat) < bot.skill.cap(stat));
+                if (!availableStats.length) {
+                    progression.nextSkillAt = null;
+                    continue;
+                }
+                bot.skillUp(availableStats[Math.floor(Math.random() * availableStats.length)]);
+                progression.nextSkillAt = bot.skill.points
+                    ? now + randomFeedBotDelay(Config.feed_bot_skill_delay_min_ms, Config.feed_bot_skill_delay_max_ms)
+                    : null;
+            }
+        }
+    }
     checkUsers = () => global.gameManager.clients.length >= 1;
     // Collision stuff
     collide = (instance, other) => {
 
         // Feed bots and their own projectiles never need to collide with one another.
-        const instanceOwner = instance.isFeedBot ? instance : instance.master?.isFeedBot ? instance.master : null;
-        const otherOwner = other.isFeedBot ? other : other.master?.isFeedBot ? other.master : null;
-        if (instanceOwner && instanceOwner === otherOwner) return 0;
+        const instanceFeedBot = instance.isFeedBot ? instance : instance.master?.isFeedBot ? instance.master : null;
+        const otherFeedBot = other.isFeedBot ? other : other.master?.isFeedBot ? other.master : null;
+        // Bots owned by one player form a group; their internal collisions add cost but do not help gameplay.
+        if (instanceFeedBot && otherFeedBot && instanceFeedBot.master === otherFeedBot.master) return 0;
 
         // Fast exit for noclip or ghosts
         if (instance.noclip || other.noclip) return 0;
@@ -65,7 +189,7 @@ class gameHandler {
                 let [portal, otherBody] = instance.isPortal ? [instance, other] : [other, instance];
 
                 if (portal.settings.destination && otherBody.isPlayer && otherBody.socket) {
-                    global.gameManager.socketManager.sendToServer(otherBody.socket, portal.settings.destination);
+                    global.gameManager.socketManager.sendToServer(otherBody.socket, portal.settings.destination, portal.settings.destinationId);
                 } else if (["bullet", "drone", "trap", "satellite"].includes(otherBody.type)) {
                     if (otherBody.master !== portal) otherBody.kill();
                 } else if (!["wall", "aura"].includes(otherBody.type)) advancedcollide(portal, otherBody, false, false);
@@ -214,8 +338,11 @@ class gameHandler {
         logs.master.set();
 
         // Do entities life
-        const profile = this.tickProfile ??= { controllers: 0, collision: 0, lastReport: Date.now(), nextConsoleSample: Date.now() + 5000 };
-        const consoleSample = Date.now() >= profile.nextConsoleSample;
+        // The profiling below is optional because it adds a performance.now() call
+        // per entity per tick.
+        const profiling = !!Config.tick_profiling;
+        const profile = profiling ? (this.tickProfile ??= { controllers: 0, collision: 0, socket: 0, selfie: 0, physics: 0, lastReport: Date.now(), nextConsoleSample: Date.now() + 5000 }) : null;
+        const consoleSample = profiling && Date.now() >= profile.nextConsoleSample;
         if (consoleSample) profile.nextConsoleSample = Date.now() + 5000;
         let timedControllers = false, timedCollision = false;
         logs.entities.set();
@@ -239,7 +366,9 @@ class gameHandler {
             if (instance.bond == null) {
                 // Resolve the physical behavior from the last collision cycle.
                 logs.physics.set();
+                const physicsStart = profiling ? performance.now() : 0;
                 instance.physics();
+                if (profiling) profile.physics += performance.now() - physicsStart;
                 logs.physics.mark();
             }
 
@@ -247,16 +376,18 @@ class gameHandler {
                 logs.entities.tally();
                 // Think about my actions.
                 logs.life.set();
-                const controllerStart = performance.now();
+                const controllerStart = profiling ? performance.now() : 0;
                 const timeControllers = consoleSample && !timedControllers;
                 if (timeControllers) { console.time("controllers"); timedControllers = true; }
                 instance.life();
                 if (timeControllers) console.timeEnd("controllers");
-                profile.controllers += performance.now() - controllerStart;
+                if (profiling) profile.controllers += performance.now() - controllerStart;
                 logs.life.mark();
                 // Take a selfie.
                 logs.selfie.set();
+                const selfieStart = profiling ? performance.now() : 0;
                 instance.takeSelfie();
+                if (profiling) profile.selfie += performance.now() - selfieStart;
                 logs.selfie.mark();
                 // Apply friction.
                 instance.friction();
@@ -267,7 +398,7 @@ class gameHandler {
             instance.updateAABB(instance.activation.active);
             // Check collisions.
             logs.collide.set();
-            const collisionStart = performance.now();
+            const collisionStart = profiling ? performance.now() : 0;
             const timeCollision = consoleSample && !timedCollision;
             if (timeCollision) { console.time("collision"); timedCollision = true; }
             for (const other of grid.query(instance.minX, instance.minY, instance.maxX, instance.maxY).values()) {
@@ -276,7 +407,7 @@ class gameHandler {
             if (instance.isInGrid) grid.insert(instance, instance.minX, instance.minY, instance.maxX, instance.maxY);
             if (timeCollision) console.timeEnd("collision");
             logs.collide.mark();
-            profile.collision += performance.now() - collisionStart;
+            if (profiling) profile.collision += performance.now() - collisionStart;
             if ((instance.touchingSizeWall === false || instance.collisionArray.length === 0) && instance.originalSize) {
                 instance.SIZE = instance.originalSize;
                 instance.originalSize = undefined;
@@ -296,22 +427,25 @@ class gameHandler {
         logs.master.mark();
         // Update lastCycle only once
         global.gameManager.room.lastCycle = util.time();
-        const socketStart = performance.now();
+        const socketStart = profiling ? performance.now() : 0;
         if (consoleSample) console.time("socket update");
         for (let i = 0; i < global.gameManager.clients.length; i++) {
             let client = global.gameManager.clients[i];
-            if (client.status.readyToBroadcast) {
+            if (client.status.readyToBroadcast && global.gameManager.socketManager.canSendUpdate(client)) {
                 client.view.gazeUpon();
             }
         }
         if (consoleSample) console.timeEnd("socket update");
-        profile.socket = (profile.socket ?? 0) + performance.now() - socketStart;
-        if (Date.now() - profile.lastReport >= 5000) {
-            const sections = ["controllers", "collision", "socket"];
-            const slowest = sections.reduce((a, b) => profile[a] >= profile[b] ? a : b);
-            console.log(`[tick profile 5s] slowest=${slowest} controllers=${profile.controllers.toFixed(1)}ms collision=${profile.collision.toFixed(1)}ms socket=${profile.socket.toFixed(1)}ms`);
-            profile.controllers = profile.collision = profile.socket = 0;
-            profile.lastReport = Date.now();
+        if (profiling) {
+            profile.socket = (profile.socket ?? 0) + performance.now() - socketStart;
+            if (Date.now() - profile.lastReport >= 5000) {
+                const sections = ["controllers", "collision", "socket"];
+                const slowest = sections.reduce((a, b) => profile[a] >= profile[b] ? a : b);
+                const clientInfo = global.gameManager.clients.map(c => `vis=${c.status.visibleEntities} fields=${c.status.lastPacketBytes} inflight=${c.status.receiving}`).join(" | ");
+                console.log(`[tick profile 5s] slowest=${slowest} controllers=${profile.controllers.toFixed(1)}ms collision=${profile.collision.toFixed(1)}ms socket=${profile.socket.toFixed(1)}ms selfie=${profile.selfie.toFixed(1)}ms physics=${profile.physics.toFixed(1)}ms entities=${entities.size} feedBots=${this.feedBots.length} ${clientInfo}`);
+                profile.controllers = profile.collision = profile.socket = profile.selfie = profile.physics = 0;
+                profile.lastReport = Date.now();
+            }
         }
     };
 
@@ -450,6 +584,7 @@ class gameHandler {
     };
 
     quickMaintainLoop = () => {
+        this.updateFeedBotProgression();
     // Auto get score
         for (let i = 0; i < this.bots.length; i++) {
             let o = this.bots[i];

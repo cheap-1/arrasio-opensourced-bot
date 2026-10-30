@@ -17,6 +17,10 @@ class socketManager {
         this.bans = [];
         this.feedBotSpawnQueue = [];
         this.feedBotSpawnTimer = null;
+        this.playerCountReportTimer = null;
+        this.lastPlayerCountReport = 0;
+        // Chat ids whose bubbles expired and still need one final clear packet.
+        this.clearedChatIds = new Set();
         // Import permissions
         for (let entry of require("../permissions.js")) {
             if (entry.key != null) {
@@ -50,14 +54,54 @@ class socketManager {
         return this.clients.length + feedBots.length;
     }
     reportPlayerCount() {
-        const count = this.getPlayerCount();
-        if (global.gameManager.parentPort) {
-            global.gameManager.parentPort.postMessage([true, count]);
-        } else {
-            for (const server of global.servers) {
-                if (server.gameManager === global.gameManager) server.players = count;
+        const report = () => {
+            this.playerCountReportTimer = null;
+            this.lastPlayerCountReport = Date.now();
+            const count = this.getPlayerCount();
+            if (global.gameManager.parentPort) {
+                global.gameManager.parentPort.postMessage([true, count]);
+            } else {
+                for (const server of global.servers) {
+                    if (server.gameManager === global.gameManager) server.players = count;
+                }
             }
+        };
+        const wait = 100 - (Date.now() - this.lastPlayerCountReport);
+        if (wait <= 0) {
+            if (this.playerCountReportTimer) clearTimeout(this.playerCountReportTimer);
+            report();
+            return;
         }
+        if (this.playerCountReportTimer) return;
+        this.playerCountReportTimer = setTimeout(report, wait);
+        this.playerCountReportTimer.unref?.();
+    }
+    pendingFeedBotCount() {
+        let count = 0;
+        for (const task of this.feedBotSpawnQueue) {
+            if (task.generation === (task.player.feedBotRespawnGeneration ?? 0)) count += task.remaining;
+        }
+        return count;
+    }
+    // Network backpressure: never queue snapshots faster than the client can consume them.
+    canSendUpdate(socket) {
+        if (socket.readyState !== socket.OPEN) return false;
+        const status = socket.status;
+        if (socket.bufferedAmount > Config.max_client_socket_buffer) return false;
+        if (status.receiving >= Config.max_client_updates_in_flight) {
+            // Clients from this build acknowledge every snapshot. If acks stop (tab suspended,
+            // bad client), don't lock the player out forever; resume after a short grace period.
+            if (status.everDownlinked && util.time() - status.lastDownlink < Config.client_downlink_timeout) return false;
+            status.receiving = 0;
+        }
+        const now = util.time();
+        // Busy scenes get a lower snapshot rate so the connection isn't flooded.
+        const rate = status.visibleEntities > Config.heavy_snapshot_entities
+            ? Math.min(Config.client_update_rate, Config.client_update_rate_heavy)
+            : Config.client_update_rate;
+        // The -2ms tolerance avoids skipping a whole tick because of integer millisecond timers.
+        if (now - status.lastUpdateSent < 1000 / rate - 2) return false;
+        return true;
     }
     queueFeedBotSpawns(player, generation, count, spawnBot, fast = false) {
         this.feedBotSpawnQueue.push({ player, generation, remaining: count, spawnBot, fast });
@@ -73,9 +117,12 @@ class socketManager {
     scheduleFeedBotSpawn() {
         if (this.feedBotSpawnTimer || !this.feedBotSpawnQueue.length) return;
         const fast = this.feedBotSpawnQueue[0].fast;
-        const delay = fast ? 100 : 100 + Math.floor(Math.random() * 500);
+        const delay = fast ? 10 : 100 + Math.floor(Math.random() * 500);
         this.feedBotSpawnTimer = setTimeout(() => {
             this.feedBotSpawnTimer = null;
+            // Spawn in small time-budgeted batches. Creating a bot is expensive, so
+            // spawning a whole 100-bot request in one tick would freeze the server.
+            const deadline = fast ? performance.now() + 5 : 0;
             while (this.feedBotSpawnQueue.length) {
                 const task = this.feedBotSpawnQueue.shift();
                 if (task.generation !== (task.player.feedBotRespawnGeneration ?? 0)) continue;
@@ -87,7 +134,7 @@ class socketManager {
                     console.error("Feed bot spawn failed:", error);
                 }
                 if (--task.remaining > 0) this.feedBotSpawnQueue.push(task);
-                break;
+                if (!fast || performance.now() >= deadline) break;
             }
             this.scheduleFeedBotSpawn();
         }, delay);
@@ -148,10 +195,20 @@ class socketManager {
     }
     chatLoop() {
     // clean up expired messages
-        let now = Date.now();
+        let now = Date.now(),
+            hasMessages = false;
         for (let i in chats) {
-            chats[i].messages = chats[i].messages.filter((chat) => chat.expires > now);
+            let messages = chats[i].messages = chats[i].messages.filter((chat) => chat.expires > now);
+            if (messages.length) hasMessages = true;
+            else {
+                // Remember ids whose bubbles just expired so clients get one final clear.
+                this.clearedChatIds.add(Number(i));
+                delete chats[i];
+            }
         }
+
+        // Nothing to send and nothing to clear: skip the per-view work entirely.
+        if (!hasMessages && this.clearedChatIds.size === 0) return;
 
         // Send chat messages to everyone
         for (let view of global.gameManager.views) {
@@ -168,12 +225,16 @@ class socketManager {
                     }
                 }
             }
+            for (let id of this.clearedChatIds) {
+                array.push({ id: id, messages: [] });
+            }
             if (view.socket.status.disablechat) {
                 view.socket.talk("CHAT_MESSAGE_ENTITY", JSON.stringify(array.map(o => {
                     return {id: o.id, messages: []} 
                 })));
             } else view.socket.talk("CHAT_MESSAGE_ENTITY", JSON.stringify(array));
         }
+        this.clearedChatIds.clear();
     }
 
     close(socket) {
@@ -257,9 +318,10 @@ class socketManager {
                     socket.permissions = Object.prototype.hasOwnProperty.call(this.permissionsDict, key) ? this.permissionsDict[key] : undefined;
                     socket.status.hasOperator = Boolean(socket.permissions?.operator);
                     if (socket.permissions) {
-                        util.log(`[INFO]: A socket was verified with the token: ${key}`);
+                        const accessLevel = socket.permissions.operator ? "operator" : "permission";
+                        util.log(`[INFO]: A socket was verified with ${accessLevel} access.`);
                     } else {
-                        util.log(`[WARNING]: A socket failed to verify with the token: ${key}`);
+                        util.log("[WARNING]: A socket failed token verification.");
                     }
                     socket.key = key;
                 }
@@ -426,7 +488,9 @@ class socketManager {
                     return 1;
                 }
                 // The downlink indicates that the client has received an update and is now ready to receive more.
-                socket.status.receiving = 0;
+                socket.status.receiving = Math.max(0, socket.status.receiving - 1);
+                socket.status.lastDownlink = util.time();
+                socket.status.everDownlinked = true;
                 socket.camera.ping = util.time() - time;
                 socket.camera.lastDowndate = util.time();
             } break;
@@ -620,14 +684,14 @@ class socketManager {
                         if (bot.feedBotOptions) bot.feedBotOptions.respawn = false;
                         bot.kill();
                         bot.destroy();
+                        handler.removeFeedBot(bot);
                     }
-                    handler.feedBots = handler.feedBots.filter(bot => bot.master.id !== body.id);
                     this.reportPlayerCount();
                     socket.talk("m", Config.popup_message_duration, "Your feed bots are cleared.");
                     return;
                 }
-                const count = m[1];
-                if (!Number.isSafeInteger(count) || count < 1) {
+                const requestedCount = m[1];
+                if (!Number.isSafeInteger(requestedCount) || requestedCount < 1) {
                     socket.talk("m", Config.popup_message_duration, "Choose a positive whole number of bots.");
                     return;
                 }
@@ -666,9 +730,16 @@ class socketManager {
                     socket.talk("m", Config.popup_message_duration, "Choose a valid movement and respawn option.");
                     return;
                 }
+                const availableCount = Math.max(0, Config.feed_bot_cap - handler.feedBots.length - this.pendingFeedBotCount());
+                if (availableCount === 0) {
+                    socket.talk("m", Config.popup_message_duration, `The server feed-bot limit (${Config.feed_bot_cap}) has been reached.`);
+                    return;
+                }
+                const count = Math.min(requestedCount, availableCount);
                 const options = { profile, tankChoice, teamChoice, movement, respawn, noFire, spawnLocation };
                 const spawnFeedBot = ownerBody => {
                     if (!ownerBody || ownerBody.isDead()) return null;
+                    if (handler.feedBots.length >= Config.feed_bot_cap) return null;
                     const botTeam = options.teamChoice === "same" ? ownerBody.team : -Number(options.teamChoice);
                     const formationIndex = player.feedBotFormationIndex ??= ownedBots.length;
                     player.feedBotFormationIndex++;
@@ -683,7 +754,10 @@ class socketManager {
                         }
                         : global.getSpawnableArea(botTeam, global.gameManager);
                     const bot = new Entity(spawnPosition, ownerBody);
-                    bot.define(options.tankChoice === "random" ? damageTanks[Math.floor(Math.random() * damageTanks.length)] : options.tankChoice);
+                    const targetTank = options.tankChoice === "random"
+                        ? damageTanks[Math.floor(Math.random() * damageTanks.length)]
+                        : options.tankChoice;
+                    bot.define("basic");
                     bot.feedBotFormationOffset = {
                         x: Math.cos(formationAngle) * formationRadius,
                         y: Math.sin(formationAngle) * formationRadius
@@ -704,20 +778,11 @@ class socketManager {
                     bot.leaderboardColor = bot.color.base;
                     bot.minimapColor = bot.color.base;
                     bot.skill.reset();
-                    while (bot.skill.level < 42) {
-                        bot.skill.score += bot.skill.levelScore;
-                        bot.skill.maintain();
-                    }
-                    while (bot.skill.points) {
-                        const availableStats = upgradeBuilds[options.profile].filter(stat => bot.skill.amount(stat) < bot.skill.cap(stat));
-                        if (!availableStats.length) break;
-                        bot.skillUp(availableStats[Math.floor(Math.random() * availableStats.length)]);
-                    }
-                    bot.refreshBodyAttributes();
-                    handler.feedBots.push(bot);
+                    handler.startFeedBotProgression(bot, targetTank, upgradeBuilds[options.profile]);
+                    handler.addFeedBot(bot);
                     this.reportPlayerCount();
                     bot.on("dead", () => {
-                        handler.feedBots = handler.feedBots.filter(entry => entry !== bot);
+                        handler.removeFeedBot(bot);
                         this.reportPlayerCount();
                         if (!options.respawn) return;
                         const generation = player.feedBotRespawnGeneration ?? 0;
@@ -725,6 +790,7 @@ class socketManager {
                             if (generation !== (player.feedBotRespawnGeneration ?? 0)) return;
                             const respawnOwner = player.body;
                             if (!respawnOwner || respawnOwner.isDead()) return;
+                            if (handler.feedBots.length + this.pendingFeedBotCount() >= Config.feed_bot_cap) return;
                             spawnFeedBot(respawnOwner);
                         }, 1000);
                     });
@@ -737,7 +803,8 @@ class socketManager {
                 const buildLabel = profile === "none" ? "no stat build" : `${profile} build`;
                 const movementLabel = movement === "still" ? "stationary" : movement === "tap" ? "short step movement" : movement === "ram" ? "ramming toward you" : "following your aim";
                 const spawnRateLabel = spawnRate === "natural" ? "queued at a natural random rate" : "queued at a fast server-paced rate";
-                socket.talk("m", Config.popup_message_duration, `${count} level-42 ${tankLabel} on ${teamLabel} with ${buildLabel}, ${movementLabel}${noFire ? ", movement only" : ""}${respawn ? ", respawning when killed" : ""}; ${spawnRateLabel}.`);
+                const capNote = requestedCount > count ? ` The server can add ${count} now before reaching its ${Config.feed_bot_cap}-bot limit.` : "";
+                socket.talk("m", Config.popup_message_duration, `${count} level-42 ${tankLabel} on ${teamLabel} with ${buildLabel}, ${movementLabel}${noFire ? ", movement only" : ""}${respawn ? ", respawning when killed" : ""}; bots assign skills and take tank upgrades with randomized human-like delays, while spawns are ${spawnRateLabel}.${capNote}`);
             } break;
             case "1": {
                 //suicide squad
@@ -1616,32 +1683,49 @@ class socketManager {
 
     perspective(e, player, data) {
         if (player.body != null) {
-            if (e.alpha < 1 && !e.limited && !player.body.settings.canSeeInvisible) {
+            const body = player.body;
+            let copied = false;
+            // Photos are cached per entity and shared between every viewer. Copy before
+            // changing anything viewer-specific so one player can't alter another's view.
+            const copy = () => {
+                if (!copied) {
+                    copied = true;
+                    data = data.slice();
+                }
+            };
+            if (e.alpha < 1 && !e.limited && !body.settings.canSeeInvisible) {
+                copy();
                 data[18] = Math.round(255 * this.getInvisEntityAlpha(player, e));
             }
-            if (player.body.id === e.master.id) {
-                data = data.slice(); // So we don't mess up references to the original
+            if (body.id === e.master.id) {
                 // Set the proper color if it's on our team and decide what to do about colors when sending updates and stuff
-                player.teamColor = new Color(!Config.random_body_colors && (Config.groups || (Config.mode == "ffa" || Config.mode == "clan" && !Config.tag)) ? 10 : global.getTeamColor(player.body.team)).compiled; // blue
+                if (player.teamColorTeam !== body.team) {
+                    player.teamColor = new Color(!Config.random_body_colors && (Config.groups || (Config.mode == "ffa" || Config.mode == "clan" && !Config.tag)) ? 10 : global.getTeamColor(body.team)).compiled; // blue
+                    player.teamColorTeam = body.team;
+                }
                 // And make it force to our mouse if it ought to
                 if (player.command.autospin) {
+                    copy();
                     data[10] = 1;
                 }
             }
-            if (player.body.settings.canSeeInvisible) {
-                data = data.slice();
+            if (body.settings.canSeeInvisible) {
+                copy();
                 let alpha = this.getInvisEntityAlpha(player, e);
                 if (e.limited) data[14] = Math.round(255 * alpha);
                 else data[18] = Math.round(255 * alpha);
             }
             if (
-                player.body.team === e.source.team &&
+                body.team === e.source.team &&
                 (Config.groups || (Config.mode == "ffa" || Config.mode == "clan" && !Config.tag))
             ) {
-                // groups
-                data = data.slice();
-                if (e.limited) data[11] = player.teamColor;
-                else data[12] = player.teamColor;
+                // groups: most entities already use the team color, so only copy when
+                // the color actually differs.
+                const colorIndex = e.limited ? 11 : 12;
+                if (data[colorIndex] !== player.teamColor) {
+                    copy();
+                    data[colorIndex] = player.teamColor;
+                }
             }
         }
         return data;
@@ -1663,8 +1747,10 @@ class socketManager {
     }
 
     sendMockup(index, socket) {
+        const mockupDataStore = socket.status.mockupData;
         for (let splittedIndex of index.toString().split("-")) {
-            if (socket.status.mockupData.receivedIndexes.includes(splittedIndex)) continue; // Do NOT continue if we have the mockup already.
+            // O(1) set lookup; the array is kept for compatibility with other code.
+            if (mockupDataStore.receivedIndexSet.has(splittedIndex)) continue;
 
             let index = parseInt(splittedIndex); // Parse it, without this wont work for some reason.
             // Now we need to find the mockup.
@@ -1675,9 +1761,10 @@ class socketManager {
             // Send the mockup to the client.
             socket.talk("M", index, JSON.stringify(mockup));
             // Also push it to the socket's status so we know it.
-            socket.status.mockupData.receivedMockups.push(mockup);
+            mockupDataStore.receivedMockups.push(mockup);
             // Push the index so the function doesnt run a thousens of times.
-            socket.status.mockupData.receivedIndexes.push(splittedIndex);
+            mockupDataStore.receivedIndexes.push(splittedIndex);
+            mockupDataStore.receivedIndexSet.add(splittedIndex);
             // Now we need the turret mockups.
             for (let turrets of mockup.turrets) {
                 // Run the same function but it targets the turret mockups.
@@ -1695,17 +1782,20 @@ class socketManager {
     }
 
     sendMockupUpgrades(index, socket) {
+        const mockupDataStore = socket.status.mockupData;
         for (let splittedIndex of index.toString().split("-")) {
-            if (socket.status.mockupData.receivedUpgradePackIndexes.includes(splittedIndex)) continue; // Do NOT continue if we have the mockup already.
+            if (mockupDataStore.receivedUpgradePackIndexSet.has(splittedIndex)) continue;
             this.sendMockup(index, socket);
             let parsedindex = parseInt(splittedIndex);
-            let mockup = mockupData.find(o => o.index === `${parsedindex}`);
+            let mockup = mockupData[mockupMap[parsedindex]];
             if (!mockup) {
                 let e = this.generateMockup(parsedindex);
-                mockup = mockupData.find(o => o.index === `${e.index}`);
+                mockup = e ? mockupData[mockupMap[e.index]] : null;
             }
-            socket.status.mockupData.receivedUpgradePackMockups.push(mockup);
-            socket.status.mockupData.receivedUpgradePackIndexes.push(splittedIndex);
+            if (!mockup) continue;
+            mockupDataStore.receivedUpgradePackMockups.push(mockup);
+            mockupDataStore.receivedUpgradePackIndexes.push(splittedIndex);
+            mockupDataStore.receivedUpgradePackIndexSet.add(splittedIndex);
             for (let { index } of mockup.upgrades) {
                 for (let i of index.toString().split("-")) this.sendMockupUpgrades(i, socket);
             }
@@ -1738,8 +1828,6 @@ class socketManager {
                 let lastCycle = global.gameManager.room.lastCycle;
                 // else update it.
                 socket.camera.lastUpdate = lastCycle;
-                // Receive it!
-                socket.status.receiving++;
                 // Prepare to emit data to send to the client to render.
                 let player = socket.player, // Quick Define player
                     camera = socket.camera, // Quick Define camera
@@ -1797,12 +1885,19 @@ class socketManager {
                 // The only reason this exists is because the client is smoothing to its updated fov, and so server does it the same.
                 camera.fov += Math.max((fovNow - camera.fov) / 30, fovNow - camera.fov);
 
+                // Camera-only updates (used when spawning) don't need a visible entity pass.
+                if (updateCam) {
+                    socket.talk("u", true, camera.x, camera.y);
+                    logs.network.mark();
+                    return;
+                }
+
                 // Grab entities that we can see
                 if (camera.lastUpdate - lastVisibleUpdate > Config.visible_list_interval) {
                     // Update our timer
                     lastVisibleUpdate = camera.lastUpdate;
                     
-                    // Reuse the nearby array instead of recreating it
+                    // Reuse the nearby map instead of recreating it
                     nearby.clear();
                     
                     // Pre-calculate camera bounds for the broad check
@@ -1810,9 +1905,15 @@ class socketManager {
                     const camXBound = camFovBroad + 100;
                     const camYBound = camFovBroad * 0.5625 + 100;
                     
-                    // Get nearby entities with single efficient check
-                    for (const entity of entities.values()) { 
-                        // Simplified check that combines both visibility checks
+                    // Ask the spatial grid for the entities in the camera area instead of
+                    // walking every entity in the room for every client.
+                    const candidates = global.grid.query(
+                        camera.x - camXBound,
+                        camera.y - camYBound,
+                        camera.x + camXBound,
+                        camera.y + camYBound
+                    );
+                    for (const entity of candidates) {
                         if (Math.abs(entity.x - camera.x) < camXBound + 1.5 * entity.size &&
                             Math.abs(entity.y - camera.y) < camYBound + 1.5 * entity.size) {
                             nearby.set(entity.id, entity);
@@ -1820,40 +1921,61 @@ class socketManager {
                     }
                 }
                 
-                // Reset the nearby for this frame and prepare for detailed visibility check
-                let visible = [];
-                
-                // Pre-calculate constants for the detailed visibility check
+                // Pre-calculate constants for the detailed visibility check.
+                // The client renders a region that is camera.fov wide and camera.fov * 0.5625 tall
+                // (16:9 reference). The margins add a little room so entities don't pop in at the
+                // screen edge while the client camera is still catching up.
                 const camX = camera.x, camY = camera.y, camFov = camera.fov;
-                const limitDistance = 1.5;  // Recommended value is 2
-                const fovDiv = camFov / limitDistance;
-                const fovDivY = fovDiv * (9 / 13);
-                
-                // Prepare a batch of mockups to send
-                const mockupsToSend = new Set();
-                
+                const fovDiv = camFov * 0.5 * Config.visible_x_margin;
+                const fovDivY = camFov * 0.28125 * Config.visible_y_margin;
+                // Bullets make up ~90% of the payload in a busy scene, so they get
+                // their own (tighter) margin. They are small and fast, so they
+                // disappear off screen long before anyone notices.
+                const bulletMargin = Config.visible_bullet_margin;
+                const bulletDiv = camFov * 0.5 * bulletMargin;
+                const bulletDivY = camFov * 0.28125 * bulletMargin;
+
+                // Prepare a batch of mockups to send (reuse the per-socket Set)
+                const mockupsToSend = socket.mockupScratch ??= new Set();
+                mockupsToSend.clear();
+
+                // Reuse a single packet array per socket. This avoids allocating a giant
+                // array (and spreading it into talk) for every snapshot.
+                const packet = socket.packetScratch ??= [];
+                packet.length = 0;
+                packet.push("u", lastCycle, camera.x, camera.y, fovNow, camera.vx, camera.vy, camera.scoping);
+                const guiData = player.gui.update(), guiPacket = player.gui.publish();
+                for (let i = 0; i < guiPacket.length; i++) packet.push(guiPacket[i]);
+                const countIndex = packet.length;
+                packet.push(0); // visible entity count placeholder
+                let visibleCount = 0;
+
                 // Check each nearby entity for detailed visibility
                 for (const entity of nearby.values()) {
-                    
                     // Detailed visibility check
-                    if (entity.photo && 
-                        Math.abs(entity.x - camX) < fovDiv + 1.5 * entity.size &&
-                        Math.abs(entity.y - camY) < fovDivY + 1.5 * entity.size
+                    const entityFovDiv = entity.type === "bullet" ? bulletDiv : fovDiv;
+                    const entityFovDivY = entity.type === "bullet" ? bulletDivY : fovDivY;
+                    if (entity.photo &&
+                        Math.abs(entity.x - camX) < entityFovDiv + 1.5 * entity.size &&
+                        Math.abs(entity.y - camY) < entityFovDivY + 1.5 * entity.size
                     ) {
                         // Add mockup to batch if needed
                         if (!Config.load_all_mockups && entity.index) {
                             mockupsToSend.add(entity.index);
                         }
-                
+
                         // Lazily initialize flattened photo
                         if (!entity.flattenedPhoto) {
                             entity.flattenedPhoto = this.flatten(entity.photo);
                         }
-                        
-                        // Add to visible entities
-                        visible.push(this.perspective(entity, player, entity.flattenedPhoto));
+
+                        // Add to visible entities (flat, no intermediate arrays)
+                        const data = this.perspective(entity, player, entity.flattenedPhoto);
+                        for (let i = 0; i < data.length; i++) packet.push(data[i]);
+                        visibleCount++;
                     }
                 }
+                packet[countIndex] = visibleCount;
                 
                 // Send mockups as a batch if needed
                 if (!Config.load_all_mockups && mockupsToSend.size > 0) {
@@ -1861,8 +1983,6 @@ class socketManager {
                         this.sendMockup(index, socket);
                     }
                 }
-                // Spread it for upload
-                const view = [].concat(...visible);
                 if (!Config.load_all_mockups) {
                     for (let upgrade of (player.body?.upgrades || [])) {
                         if (player.body.skill.level >= upgrade.level) {
@@ -1870,31 +1990,13 @@ class socketManager {
                         }
                     }
                 }
-                if (updateCam) {
-                    socket.talk(
-                        "u",
-                        true,
-                        camera.x,
-                        camera.y
-                    );
-                } else {
-                    // Update the gui
-                    player.gui.update();
-                    // Send it to the player
-                    socket.talk(
-                        "u",
-                        lastCycle,
-                        camera.x,
-                        camera.y,
-                        fovNow,
-                        camera.vx,
-                        camera.vy,
-                        camera.scoping,
-                        ...player.gui.publish(),
-                        visible.length,
-                        ...view
-                    );
-                }
+
+                socket.talkPacket(packet);
+                // The client acknowledges this packet with "d"; count it as in flight until then.
+                socket.status.receiving++;
+                socket.status.lastUpdateSent = lastCycle;
+                socket.status.visibleEntities = visibleCount;
+                socket.status.lastPacketBytes = packet.length;
                 logs.network.mark();
             }
         };
@@ -2260,7 +2362,7 @@ class socketManager {
         }
     })();
 
-    sendToServer(socket, server) {
+    sendToServer(socket, server, serverId = null) {
         if (!socket.player?.body || socket.status.transferred) return;
         socket.status.transferred = true;
         let id = Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, "0");
@@ -2279,7 +2381,14 @@ class socketManager {
             })
         }).then(async(r) => {
             if (r.status === 200) {
-                socket.talk("t", server.replace("http://", "").replace("https://", ""), id);
+                let destination = server.replace("http://", "").replace("https://", "");
+                // Send the player to the address they can actually reach. When the
+                // server is behind a tunnel only the main host is available.
+                if (Config.proxy_game_servers !== false && serverId) {
+                    const host = socket.requestHost || Config.host;
+                    destination = `${host}/${serverId}`;
+                }
+                socket.talk("t", destination, id);
             }
         }).catch(e => {
             console.log(e);
@@ -2294,6 +2403,9 @@ class socketManager {
         socket.spectateEntity = null;
         socket.id = crypto.randomUUID();
         socket.binaryType = "arraybuffer";
+        // Remember which host the client used to reach us so server travel can
+        // send them back to an address they can actually connect to.
+        socket.requestHost = req.headers["x-forwarded-host"] || req.headers.host || Config.host;
         socket.onerror = () => {};
         socket.spawn = (name) => this.spawn(socket, name);
         socket.onerror = () => {};
@@ -2301,11 +2413,12 @@ class socketManager {
             util.warn(reason + " Kicking.");
             socket.close();
         };
-        socket.talk = (...message) => {
+        socket.talkPacket = message => {
             if (socket.readyState === socket.OPEN) {
                 socket.send(protocol.encode(message), { binary: true });
             }
         };
+        socket.talk = (...message) => socket.talkPacket(message);
         socket.ban = (reason) => this.ban(socket, reason);
         socket.permaban = (reason) => this.permaban(socket, reason);
         socket.lastWords = (...message) => {
@@ -2319,13 +2432,17 @@ class socketManager {
             this.close(socket);
         });
         socket.initMockupList = () => {
-            return {
+            const list = {
                 receivedIndexes: [], // The only reason why this exist is because to prevent lags from the socket gazeUpon, You can find it out by removing this.
                 receivedMockups: [],
                 receivedUpgradePackIndexes: [],
                 receivedUpgradePackMockups: [],
                 requestMockups: []
-            }
+            };
+            // These mirror the arrays above for O(1) lookups in sendMockup.
+            list.receivedIndexSet = new Set();
+            list.receivedUpgradePackIndexSet = new Set();
+            return list;
         }
         socket.messageManager = socket.on("message", message => this.incoming(message, socket));
         socket.connectedTo = global.gameManager.name;
@@ -2361,6 +2478,11 @@ class socketManager {
         socket.status = {
             verified: false,
             receiving: 0,
+            lastUpdateSent: 0,
+            lastDownlink: 0,
+            everDownlinked: false,
+            visibleEntities: 0,
+            lastPacketBytes: 0,
             deceased: true,
             requests: 0,
             hasSpawned: false,

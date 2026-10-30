@@ -181,7 +181,13 @@ class gameServer {
     // Create a new web server class to handle incoming requests
     startWebServer(socketManager) {
     // Create the socket
-        this.wsServer = new ws.WebSocketServer({ noServer: true });
+        this.wsServer = new ws.WebSocketServer({
+            noServer: true,
+            perMessageDeflate: !!Config.enable_websocket_compression && {
+                threshold: Config.websocket_compression_threshold,
+                zlibDeflateOptions: { level: 1 }
+            }
+        });
         // Create the http server
         this.httpServer = http.createServer((req, res) => {
             res.setHeader("Access-Control-Allow-Origin", "*");
@@ -218,6 +224,8 @@ class gameServer {
                         res.writeHead(200);
                         res.end(JSON.stringify([{
                             ip: this.host,
+                            publicIp: Config.proxy_game_servers === false ? this.host : `${Config.host}/${this.webProperties.id}`,
+                            id: this.webProperties.id,
                             players: this.socketManager.getPlayerCount(),
                             gameMode: this.name
                         }]));
