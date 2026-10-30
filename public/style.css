@@ -595,6 +595,39 @@ body.not-mobile .mobileRow {
 	display: none;
 }
 
+.mobileCursorModeOption {
+	display: flex !important;
+	align-items: center;
+	gap: 6px;
+}
+.mobileCursorIcon {
+	width: 18px;
+	height: 18px;
+	flex: 0 0 18px;
+	fill: #fff;
+	stroke: #222;
+	stroke-width: 1.5;
+	stroke-linejoin: round;
+}
+.mobileCursorHint {
+	display: block;
+	margin-left: 31px;
+	font-size: 11px;
+}
+.mobileCursorSettings td {
+	padding: 4px 6px;
+	font-size: 11px;
+}
+.mobileCursorSettings output {
+	font-weight: bold;
+}
+.mobileCursorRange {
+	display: block;
+	width: 100%;
+	min-height: 24px;
+	touch-action: pan-x;
+}
+
 .slider {
 	position: relative;
 	top: 0px;

@@ -319,6 +319,36 @@
                                             <div><label class="container"><input id="showJoystick" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark"></span>Joystick</label></div>
                                         </td>
                                     </tr>
+                                    <tr class="mobileRow">
+                                        <td colspan="2">
+                                            <div>
+                                                <label class="container mobileCursorModeOption">
+                                                    <input id="mobileCursorMode" tabindex="-1" class="checkbox" type="checkbox">
+                                                    <span class="checkmark"></span>
+                                                    <svg class="mobileCursorIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 2v18l5-5 3.2 7 3.1-1.5-3.2-6.8H20L4 2z" /></svg>
+                                                    Cursor Mode
+                                                </label>
+                                                <small class="mobileCursorHint">Left joystick moves. Touch and drag on the right to aim.</small>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr class="mobileRow mobileCursorSettings">
+                                        <td>
+                                            <label for="mobileCursorButtonSize">LMB/RMB size: <output id="mobileCursorButtonSizeValue">64 px</output></label>
+                                            <input id="mobileCursorButtonSize" class="mobileCursorRange" type="range" min="48" max="96" step="4" value="64">
+                                        </td>
+                                        <td>
+                                            <label for="mobileCursorButtonX">Horizontal position: <output id="mobileCursorButtonXValue">76%</output></label>
+                                            <input id="mobileCursorButtonX" class="mobileCursorRange" type="range" min="60" max="90" step="1" value="76">
+                                        </td>
+                                    </tr>
+                                    <tr class="mobileRow mobileCursorSettings">
+                                        <td>
+                                            <label for="mobileCursorButtonY">Vertical position: <output id="mobileCursorButtonYValue">80%</output></label>
+                                            <input id="mobileCursorButtonY" class="mobileCursorRange" type="range" min="35" max="85" step="1" value="80">
+                                        </td>
+                                        <td><small>Hold LMB to fire; hold RMB for alt-fire.</small></td>
+                                    </tr>
                                     <tr>
                                         <td>
                                             <div><label class="container"><input id="optAllowIngameOptions" tabindex="-1" class="checkbox" type="checkbox"><span class="checkmark" checked></span>Ingame Options</label></div>

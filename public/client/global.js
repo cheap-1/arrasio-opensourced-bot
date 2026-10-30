@@ -332,6 +332,11 @@ const global = {
         showCrosshair: false,
         useBigJoysticks: false,
         showJoysticks: false,
+        cursorMode: false,
+        cursorButtonSize: 64,
+        cursorButtonX: 76,
+        cursorButtonY: 80,
+        cursorPosition: null,
     },
     GUIStatus: {
         renderGUI: false,

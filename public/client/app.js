@@ -34,6 +34,26 @@ import * as socketStuff from "./socketinit.js";
     const feedBotRespawn = document.getElementById("feedBotRespawn");
     const feedBotNoFire = document.getElementById("feedBotNoFire");
     const feedBotInvincible = document.getElementById("feedBotInvincible");
+    const mobileCursorSettings = [
+        { id: "mobileCursorButtonSize", status: "cursorButtonSize", output: "mobileCursorButtonSizeValue", suffix: " px" },
+        { id: "mobileCursorButtonX", status: "cursorButtonX", output: "mobileCursorButtonXValue", suffix: "%" },
+        { id: "mobileCursorButtonY", status: "cursorButtonY", output: "mobileCursorButtonYValue", suffix: "%" },
+    ];
+    const updateMobileCursorSetting = setting => {
+        const input = document.getElementById(setting.id);
+        const value = Number(input.value);
+        global.mobileStatus[setting.status] = value;
+        document.getElementById(setting.output).textContent = `${value}${setting.suffix}`;
+    };
+    for (const setting of mobileCursorSettings) {
+        const input = document.getElementById(setting.id);
+        input.addEventListener("input", () => updateMobileCursorSetting(setting));
+        input.addEventListener("change", () => util.submitToLocalStorage(setting.id));
+    }
+    document.getElementById("mobileCursorMode").addEventListener("change", event => {
+        global.mobileStatus.cursorMode = event.currentTarget.checked;
+        util.submitToLocalStorage("mobileCursorMode");
+    });
     feedBotInvincible.addEventListener("change", () => {
         if (global.socket) global.socket.talk("B", "godmode", feedBotInvincible.checked ? 1 : 0);
     });
@@ -173,6 +193,10 @@ import * as socketStuff from "./socketinit.js";
         util.retrieveFromLocalStorage("optReducedInfo");
         util.retrieveFromLocalStorage("showCrosshair");
         util.retrieveFromLocalStorage("showJoystick");
+        util.retrieveFromLocalStorage("mobileCursorMode");
+        util.retrieveFromLocalStorage("mobileCursorButtonSize");
+        util.retrieveFromLocalStorage("mobileCursorButtonX");
+        util.retrieveFromLocalStorage("mobileCursorButtonY");
         util.retrieveFromLocalStorage("optFullHD");
         util.retrieveFromLocalStorage("optUiScale");
         util.retrieveFromLocalStorage("optAllowIngameOptions");
@@ -190,6 +214,17 @@ import * as socketStuff from "./socketinit.js";
         if (document.getElementById("optMobile").value === "") {
             document.getElementById("optMobile").value = "mobile";
         }
+        const mobileCursorDefaults = {
+            mobileCursorButtonSize: "64",
+            mobileCursorButtonX: "76",
+            mobileCursorButtonY: "80",
+        };
+        for (const [id, value] of Object.entries(mobileCursorDefaults)) {
+            const input = document.getElementById(id);
+            if (!input.value) input.value = value;
+            updateMobileCursorSetting(mobileCursorSettings.find(setting => setting.id === id));
+        }
+        global.mobileStatus.cursorMode = document.getElementById("mobileCursorMode").checked;
         // If we are loaded for the first time then load the default options settings.
         if (!localStorage.getItem("loadedForFirstTime")) {
             document.getElementById("optRenderGui").checked = true;
@@ -1161,6 +1196,8 @@ import * as socketStuff from "./socketinit.js";
         global.GUIStatus.renderIngameOptions = document.getElementById("optAllowIngameOptions").checked;
         global.mobileStatus.enableCrosshair = document.getElementById("showCrosshair").checked;
         global.mobileStatus.showJoysticks = document.getElementById("showJoystick").checked;
+        global.mobileStatus.cursorMode = document.getElementById("mobileCursorMode").checked;
+        for (const setting of mobileCursorSettings) updateMobileCursorSetting(setting);
         config.graphical.oldUIStyle = document.getElementById("optOldUiStyle").checked;
         // Game
         config.game.incognitoMode = document.getElementById("optIncognitoMode").checked;
@@ -1265,6 +1302,10 @@ import * as socketStuff from "./socketinit.js";
         util.submitToLocalStorage("optReducedInfo");
         util.submitToLocalStorage("showCrosshair");
         util.submitToLocalStorage("showJoystick");
+        util.submitToLocalStorage("mobileCursorMode");
+        util.submitToLocalStorage("mobileCursorButtonSize");
+        util.submitToLocalStorage("mobileCursorButtonX");
+        util.submitToLocalStorage("mobileCursorButtonY");
         util.submitToLocalStorage("optFullHD");
         util.submitToLocalStorage("optUiScale");
         util.submitToLocalStorage("optAllowIngameOptions");
@@ -4009,13 +4050,15 @@ import * as socketStuff from "./socketinit.js";
             0,
             2 * Math.PI
         );
-        ctx[2].arc(
-            (global.screenWidth * 5) / 6,
-            (global.screenHeight * 2) / 3,
-            radius,
-            0,
-            2 * Math.PI
-        );
+        if (!global.mobileStatus.cursorMode) {
+            ctx[2].arc(
+                (global.screenWidth * 5) / 6,
+                (global.screenHeight * 2) / 3,
+                radius,
+                0,
+                2 * Math.PI
+            );
+        }
         ctx[2].fill();
         ctx[2].globalAlpha = 0.5;
         ctx[2].fillStyle = "#FFFFFF";
@@ -4028,22 +4071,28 @@ import * as socketStuff from "./socketinit.js";
                 0,
                 2 * Math.PI
             );
-            ctx[2].arc(
-                global.canvas.controlTouchPos.x + (global.screenWidth * 5) / 6,
-                global.canvas.controlTouchPos.y + (global.screenHeight * 2) / 3,
-                radius / 2.5,
-                0,
-                2 * Math.PI
-            );
+            if (!global.mobileStatus.cursorMode) {
+                ctx[2].arc(
+                    global.canvas.controlTouchPos.x + (global.screenWidth * 5) / 6,
+                    global.canvas.controlTouchPos.y + (global.screenHeight * 2) / 3,
+                    radius / 2.5,
+                    0,
+                    2 * Math.PI
+                );
+            }
         }
         ctx[2].fill();
 
         // crosshair
         drawCrosshair();
+        if (global.mobileStatus.cursorMode) {
+            drawMobileCursorButtons();
+            drawMobileCursorIcon();
+        }
     };
 
     function drawCrosshair() {
-        if (global.mobileStatus.showCrosshair && (global.mobileStatus.enableCrosshair || global.gamepadMode)) {
+        if (!global.mobileStatus.cursorMode && global.mobileStatus.showCrosshair && (global.mobileStatus.enableCrosshair || global.gamepadMode)) {
             const crosshairpos = {
                 x: global.screenWidth / 2 + global.player.target.x,
                 y: global.screenHeight / 2 + global.player.target.y
@@ -4059,6 +4108,46 @@ import * as socketStuff from "./socketinit.js";
             ctx[2].closePath();
             ctx[2].stroke();
         }
+    }
+
+    function drawMobileCursorButtons() {
+        if (!global.gameStart || global.died || global.disconnected) return;
+        for (const button of global.canvas.getMobileCursorButtons()) {
+            const pressed = global.canvas.isMobileCursorButtonPressed(button.command);
+            ctx[2].save();
+            ctx[2].globalAlpha = 0.88;
+            ctx[2].fillStyle = pressed ? color.green : color.grey;
+            ctx[2].fillRect(button.x, button.y, button.width, button.height);
+            ctx[2].globalAlpha = 1;
+            ctx[2].strokeStyle = color.black;
+            ctx[2].lineWidth = 3;
+            ctx[2].strokeRect(button.x, button.y, button.width, button.height);
+            drawText(button.label, button.x + button.width / 2, button.y + button.height / 2 + button.height * 0.2, button.height * 0.36, color.guiwhite, "center", true);
+            ctx[2].restore();
+        }
+    }
+
+    function drawMobileCursorIcon() {
+        const pointer = global.mobileStatus.cursorPosition;
+        if (!pointer) return;
+        ctx[2].save();
+        ctx[2].translate(pointer.x, pointer.y);
+        ctx[2].beginPath();
+        ctx[2].moveTo(1, 1);
+        ctx[2].lineTo(1, 24);
+        ctx[2].lineTo(7, 18);
+        ctx[2].lineTo(12, 29);
+        ctx[2].lineTo(17, 27);
+        ctx[2].lineTo(12, 16);
+        ctx[2].lineTo(22, 16);
+        ctx[2].closePath();
+        ctx[2].fillStyle = "#FFFFFF";
+        ctx[2].strokeStyle = "#151515";
+        ctx[2].lineWidth = 2.5;
+        ctx[2].lineJoin = "round";
+        ctx[2].fill();
+        ctx[2].stroke();
+        ctx[2].restore();
     }
 
     function drawMobileButtons(spacing, alcoveSize) {
@@ -4755,12 +4844,12 @@ import * as socketStuff from "./socketinit.js";
         const PANEL_HIDDEN_X = PANEL_VISIBLE_X - PANEL_WIDTH - 20;
         const panelX = PANEL_HIDDEN_X + (PANEL_VISIBLE_X - PANEL_HIDDEN_X) - extraLeftX;
         const TAB_CONTENT_HEIGHTS = [
-            (PANEL_Y + 685 + 1 * 40 + 45) - PANEL_Y,  // perf section: last row baseY + 1 row + padding
+            (PANEL_Y + 930 + 45) - PANEL_Y,  // includes the mobile cursor controls at the bottom of the options tab
             300,
             300
         ];
         const TAB_CONTENT_MAX_SCROLL = [
-            0,
+            500,
             300,
             300
         ];
@@ -4895,11 +4984,41 @@ import * as socketStuff from "./socketinit.js";
             // OPTIONS TAB
 
             drawText("Game Appearance", panelX + PANEL_WIDTH / 2, PANEL_Y + 30, 15.5, color.guiwhite, "center");
-            drawText("UI Elements",     panelX + PANEL_WIDTH / 2, PANEL_Y + 385, 15.5, color.guiwhite, "center");
-            drawText("Extra",           panelX + PANEL_WIDTH / 2, PANEL_Y + 575, 15.5, color.guiwhite, "center");
-            drawText("Performance",     panelX + PANEL_WIDTH / 2, PANEL_Y + 745, 15.5, color.guiwhite, "center");
+            drawText("UI & Mobile Controls", panelX + PANEL_WIDTH / 2, PANEL_Y + 385, 15.5, color.guiwhite, "center");
+            drawText("Extra",           panelX + PANEL_WIDTH / 2, PANEL_Y + 700, 15.5, color.guiwhite, "center");
+            drawText("Performance",     panelX + PANEL_WIDTH / 2, PANEL_Y + 865, 15.5, color.guiwhite, "center");
 
             if (!global.optionsCheckboxes) {
+                const makeMobileCursorSlider = (id, label, tooltip, column, row, target, min, max, step = 1) => ({
+                    type: "slidingBar",
+                    id,
+                    label,
+                    column,
+                    row,
+                    section: "ui",
+                    tooltip,
+                    maxValue: max,
+                    maxLowestValue: min,
+                    step,
+                    listTarget: "mobileStatus",
+                    target,
+                    trigger: (mouse, data) => {
+                        const pointer = optionsMenu_getPointer();
+                        if (!data.bounds) return;
+                        const knobWidth = 12.2;
+                        const adjustedX = data.bounds.x + knobWidth / 2;
+                        const adjustedWidth = data.bounds.width - knobWidth;
+                        const ratio = Math.max(0, Math.min(1, (pointer.x - adjustedX) / adjustedWidth));
+                        const range = data.maxValue - data.maxLowestValue;
+                        const rawValue = (ratio * range) + data.maxLowestValue;
+                        const value = Math.round(rawValue / data.step) * data.step;
+                        global.mobileStatus[data.target] = value;
+                        const input = document.getElementById(data.id);
+                        input.value = value;
+                        updateMobileCursorSetting(mobileCursorSettings.find(setting => setting.id === data.id));
+                        util.submitToLocalStorage(data.id);
+                    }
+                });
                 global.optionsCheckboxes = [
                     // Game Appearance
                     { type: "checkbox",  id: "optRenderNames",         label: "Player Names",          column: 0, row: 0, section: "appearance", tooltip: "Show player names." },
@@ -4914,7 +5033,7 @@ import * as socketStuff from "./socketinit.js";
                       trigger: (mouse, data) => {
                         let pointer = optionsMenu_getPointer();
                         if (data.bounds) {
-                            let listFolder = config[data.listTarget];
+                            let listFolder = data.listTarget === "mobileStatus" ? global.mobileStatus : config[data.listTarget];
                             const knobWidth = 12.2;
                             const halfKnob = knobWidth / 2;
                             const adjustedX = data.bounds.x + halfKnob;
@@ -4943,6 +5062,10 @@ import * as socketStuff from "./socketinit.js";
                     { type: "checkbox",  id: "optRenderLeaderboard",   label: "Leaderboard",           column: 1, row: 0, section: "ui", tooltip: "Toggle the visibility of the leaderboard." },
                     { type: "checkbox",  id: "optRenderMinimap",       label: "Minimap",               column: 1, row: 1, section: "ui", tooltip: "Toggle the visibility of the minimap." },
                     { type: "checkbox",  id: "optReducedInfo",         label: "Extra Info",            column: 1, row: 2, section: "ui", tooltip: "Show various extra information in the bottom right corner.", reverseCheck: true },
+                    { type: "checkbox",  id: "mobileCursorMode",       label: "Mobile Cursor Mode",    column: 1, row: 3, section: "ui", tooltip: "Use the left touch area to move and the right touch area as a cursor, with separate LMB and RMB buttons." },
+                    makeMobileCursorSlider("mobileCursorButtonSize", "Cursor button size", "Adjust the size of the mobile LMB and RMB buttons.", 0, 4, "cursorButtonSize", 48, 96, 4),
+                    makeMobileCursorSlider("mobileCursorButtonX", "Cursor buttons X position", "Move the LMB and RMB buttons horizontally.", 1, 4, "cursorButtonX", 60, 90),
+                    makeMobileCursorSlider("mobileCursorButtonY", "Cursor buttons Y position", "Move the LMB and RMB buttons vertically.", 0, 5, "cursorButtonY", 35, 85),
 
                     // Extra
                     { type: "option",    id: "optUiScale",             label: "",                      column: 0, row: 0, section: "extra", tooltip: "Configure the size of the user interface.",
@@ -4983,8 +5106,8 @@ import * as socketStuff from "./socketinit.js";
                 const cb = global.optionsCheckboxes[i];
                 let baseY = PANEL_Y + 45;
                 if (cb.section === "ui")    baseY = PANEL_Y + 400;
-                if (cb.section === "extra") baseY = PANEL_Y + 590;
-                if (cb.section === "perf")  baseY = PANEL_Y + 760;
+                if (cb.section === "extra") baseY = PANEL_Y + 715;
+                if (cb.section === "perf")  baseY = PANEL_Y + 880;
 
                 const baseXLeft  = panelX + 20;
                 const baseXRight = panelX + PANEL_WIDTH / 2 + 7.5;
@@ -5069,7 +5192,7 @@ import * as socketStuff from "./socketinit.js";
                     cb.tooltipService.y = hitY + 35 - scrollY * clickableRatio;
                     cb.tooltipService.targetAlpha = 0;
                     cb.bounds = {x: x, width: 150};
-                    let listFolder = config[cb.listTarget];
+                    let listFolder = cb.listTarget === "mobileStatus" ? global.mobileStatus : config[cb.listTarget];
                     const rawStrokeValue = listFolder[cb.target] ?? 0;
                     const strokeValue = Math.max(cb.maxLowestValue, Math.min(cb.maxValue, rawStrokeValue));
                     const renderRange = cb.maxValue - cb.maxLowestValue;

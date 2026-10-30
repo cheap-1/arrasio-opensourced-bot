@@ -184,7 +184,8 @@ module.exports = {
             private: false,
 
             properties: {
-                teams: 4
+                teams: 4,
+                disable_rocks: true
             }
         },
         {

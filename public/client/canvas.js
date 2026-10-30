@@ -50,6 +50,8 @@ class Canvas {
         this.inverseMouse = false;
         this.spinLock = false;
         this.mouseMoved = false;
+        this.mobileMouseTouches = new Map();
+        this.cursorMousePosition = null;
         this.treeScrollSpeed = 0.5;
         this.treeScrollSpeedMultiplier = 1;
         this.initalized = false;
@@ -782,6 +784,41 @@ class Canvas {
     }
 
     // Touchscreen Controls
+    getMobileCursorButtons() {
+        const size = Number(global.mobileStatus.cursorButtonSize) || 64;
+        const width = size * 1.15;
+        const height = size * 0.9;
+        const gap = Math.max(6, size * 0.12);
+        const totalWidth = width * 2 + gap;
+        const margin = Math.max(8, size * 0.15);
+        const requestedCenterX = global.screenWidth * (Number(global.mobileStatus.cursorButtonX) || 76) / 100;
+        const groupX = Math.max(margin, Math.min(global.screenWidth - totalWidth - margin, requestedCenterX - totalWidth / 2));
+        const requestedCenterY = global.screenHeight * (Number(global.mobileStatus.cursorButtonY) || 80) / 100;
+        const centerY = Math.max(height / 2 + margin, Math.min(global.screenHeight - height / 2 - margin, requestedCenterY));
+        const y = centerY - height / 2;
+        return [
+            { command: 4, label: "LMB", x: groupX, y, width, height },
+            { command: 6, label: "RMB", x: groupX + width + gap, y, width, height },
+        ];
+    }
+    isMobileCursorButtonPressed(command) {
+        for (const pressedCommand of this.mobileMouseTouches.values()) {
+            if (pressedCommand === command) return true;
+        }
+        return false;
+    }
+    updateMobileCursorPosition(mpos) {
+        const playerX = global.player.screenx / global.screenWidth * this.cv.width + this.cv.width / 2;
+        const playerY = global.player.screeny / global.screenHeight * this.cv.height + this.cv.height / 2;
+        this.target.x = (mpos.x - playerX) * global.screenWidth / this.cv.width;
+        this.target.y = (mpos.y - playerY) * global.screenHeight / this.cv.height;
+        global.reverseTank = this.reverseDirection ? -1 : 1;
+        global.player.target = this.target;
+        global.mobileStatus.cursorPosition = { x: mpos.x / global.ratio, y: mpos.y / global.ratio };
+        this.cursorMousePosition = { x: mpos.x, y: mpos.y };
+        global.mouse = this.cursorMousePosition;
+        this.mouseMoved = true;
+    }
     touchStart(e) {
         e.preventDefault();
         if (global.died && !global.cannotRespawn) {
@@ -794,6 +831,19 @@ class Canvas {
                     y: touch.clientY * global.ratio,
                 };
                 let id = touch.identifier;
+                if (global.gameStart && !global.died && !global.disconnected && global.mobileStatus.cursorMode) {
+                    const cursorButton = this.getMobileCursorButtons().find(button =>
+                        mpos.x / global.ratio >= button.x &&
+                        mpos.x / global.ratio <= button.x + button.width &&
+                        mpos.y / global.ratio >= button.y &&
+                        mpos.y / global.ratio <= button.y + button.height
+                    );
+                    if (cursorButton) {
+                        this.mobileMouseTouches.set(id, cursorButton.command);
+                        this.socket.cmd.set(cursorButton.command, true);
+                        continue;
+                    }
+                }
                 let buttonIndex = global.clickables.mobileButtons.check(mpos);
                 if (buttonIndex !== -1) {
                     switch (buttonIndex) {
@@ -880,7 +930,8 @@ class Canvas {
                                 this.movementTouch = id;
                             } else if (this.controlTouch === null && !onLeft) {
                                 this.controlTouch = id;
-                                this.socket.cmd.set(4, true);
+                                if (global.mobileStatus.cursorMode) this.updateMobileCursorPosition(mpos);
+                                else this.socket.cmd.set(4, true);
                             }
                         }
                     }
@@ -898,6 +949,7 @@ class Canvas {
             };
             let id = touch.identifier;
 
+            if (this.mobileMouseTouches.has(id)) continue;
             if (this.movementTouch === id) {
                 let ratio = global.canvas.height / global.screenHeight / global.ratio;
                 let radius = Math.min(
@@ -930,43 +982,57 @@ class Canvas {
                 if (x > amount !== this.movementRight)
                     this.socket.cmd.set(3, (this.movementRight = x > amount));
             } else if (this.controlTouch === id) {
-                global.mobileStatus.showCrosshair = true;
-                let ratio = global.canvas.height / global.screenHeight / global.ratio;
-                let radius = Math.min(
-                    global.mobileStatus.useBigJoysticks ? global.screenWidth * 0.8 : global.screenWidth * 0.6,
-                    global.mobileStatus.useBigJoysticks ? global.screenHeight * 0.16 : global.screenHeight * 0.12
-                );
-                let cx = (mpos.x - (this.cv.width * 5) / 6) / ratio / 2;
-                let cy = (mpos.y - (this.cv.height * 2) / 3) / ratio / 2;
-                let touchX = cx;
-                let touchY = cy;
-                let r = Math.sqrt(cx ** 2 + cy ** 2);
-                let angle = Math.atan2(cy, cx);
-                if (r > radius) {
-                    touchX = Math.cos(angle) * radius;
-                    touchY = Math.sin(angle) * radius;
-                }
-                this.controlTouchPos = { x: touchX, y: touchY };
-                radius = Math.min(
-                    global.screenWidth * 0.12 / ratio,
-                    global.screenHeight * 0.24 / ratio
-                )
-                if (!this.spinLock) {
-                    if (cx < -radius) cx = -radius;
-                    else if (cx > radius) cx = radius;
-                    if (cy < -radius) cy = -radius;
-                    else if (cy > radius) cy = radius;
-                    this.target.x = ((cx / radius) * global.screenWidth) / 2;
-                    this.target.y = ((cy / radius) * global.screenHeight) / 2;
+                if (global.mobileStatus.cursorMode) {
+                    global.mobileStatus.showCrosshair = false;
+                    this.updateMobileCursorPosition(mpos);
+                } else {
+                    global.mobileStatus.showCrosshair = true;
+                    let ratio = global.canvas.height / global.screenHeight / global.ratio;
+                    let radius = Math.min(
+                        global.mobileStatus.useBigJoysticks ? global.screenWidth * 0.8 : global.screenWidth * 0.6,
+                        global.mobileStatus.useBigJoysticks ? global.screenHeight * 0.16 : global.screenHeight * 0.12
+                    );
+                    let cx = (mpos.x - (this.cv.width * 5) / 6) / ratio / 2;
+                    let cy = (mpos.y - (this.cv.height * 2) / 3) / ratio / 2;
+                    let touchX = cx;
+                    let touchY = cy;
+                    let r = Math.sqrt(cx ** 2 + cy ** 2);
+                    let angle = Math.atan2(cy, cx);
+                    if (r > radius) {
+                        touchX = Math.cos(angle) * radius;
+                        touchY = Math.sin(angle) * radius;
+                    }
+                    this.controlTouchPos = { x: touchX, y: touchY };
+                    radius = Math.min(
+                        global.screenWidth * 0.12 / ratio,
+                        global.screenHeight * 0.24 / ratio
+                    )
+                    if (!this.spinLock) {
+                        if (cx < -radius) cx = -radius;
+                        else if (cx > radius) cx = radius;
+                        if (cy < -radius) cy = -radius;
+                        else if (cy > radius) cy = radius;
+                        this.target.x = ((cx / radius) * global.screenWidth) / 2;
+                        this.target.y = ((cy / radius) * global.screenHeight) / 2;
+                    }
                 }
             }
         }
-        global.mouse = this.target;
+        if (global.mobileStatus.cursorMode) {
+            if (this.cursorMousePosition) global.mouse = this.cursorMousePosition;
+        } else global.mouse = this.target;
     }
     touchEnd(e) {
         e.preventDefault();
         for (let touch of e.changedTouches) {
             let id = touch.identifier;
+
+            if (this.mobileMouseTouches.has(id)) {
+                const command = this.mobileMouseTouches.get(id);
+                this.mobileMouseTouches.delete(id);
+                if (!this.isMobileCursorButtonPressed(command)) this.socket.cmd.set(command, false);
+                continue;
+            }
       
             if (this.movementTouch === id) {
                 this.movementTouch = null;
@@ -978,7 +1044,7 @@ class Canvas {
             } else if (this.controlTouch === id) {
                 this.controlTouch = null;
                 this.controlTouchPos = { x: 0, y: 0 };
-                this.socket.cmd.set(4, false);
+                if (!global.mobileStatus.cursorMode) this.socket.cmd.set(4, false);
                 global.mobileStatus.showCrosshair = false;
             }
         }
